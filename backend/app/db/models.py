@@ -4,6 +4,7 @@ from typing import Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    Boolean,
     Computed,
     DateTime,
     ForeignKey,
@@ -152,4 +153,59 @@ document_chunks_metadata_idx = Index(
 document_chunks_workspace_idx = Index(
     "document_chunks_workspace_idx",
     DocumentChunk.workspace_id,
+)
+
+
+class ChatLog(Base):
+    __tablename__ = "chat_logs"
+    __table_args__ = (
+        UniqueConstraint("request_id", name="chat_logs_request_id_key"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    request_id: Mapped[str] = mapped_column(Text, nullable=False)
+    workspace_id: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="public",
+        server_default=sql_text("'public'"),
+    )
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    sources: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=sql_text("'[]'::jsonb"),
+    )
+    retrieval: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=sql_text("'{}'::jsonb"),
+    )
+    usage: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=sql_text("'{}'::jsonb"),
+    )
+    refusal: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    citation_valid: Mapped[bool | None] = mapped_column(Boolean)
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=sql_text("now()"),
+    )
+
+
+chat_logs_workspace_created_at_idx = Index(
+    "chat_logs_workspace_created_at_idx",
+    ChatLog.workspace_id,
+    ChatLog.created_at,
 )

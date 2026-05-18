@@ -3,8 +3,12 @@ from typing import Any
 
 import pytest
 
-from backend.app.db.models import Document, DocumentChunk
-from backend.app.db.repositories import DocumentRepository
+from backend.app.db.models import ChatLog, Document, DocumentChunk
+from backend.app.db.repositories import (
+    ChatLogRepository,
+    CreateChatLogInput,
+    DocumentRepository,
+)
 from ingestion.chunking import chunk_document
 from ingestion.hashing import compute_content_hash
 from ingestion.models import RawDocument
@@ -44,6 +48,21 @@ def make_raw_document() -> RawDocument:
 
 def make_embedding(dimension: int = 1536) -> list[float]:
     return [0.0] * (dimension - 1) + [1.0]
+
+
+def make_chat_log_input() -> CreateChatLogInput:
+    return CreateChatLogInput(
+        request_id=" request-1 ",
+        workspace_id=" public ",
+        question=" What problem does FlashAttention solve? ",
+        answer="FlashAttention reduces memory traffic. [1]",
+        sources=[{"source_id": "1", "title": "FlashAttention Notes"}],
+        retrieval={"mode": "hybrid_rrf_rerank"},
+        usage={"model": "fake-llm", "latency_ms": 12},
+        refusal=None,
+        citation_valid=True,
+        latency_ms=12,
+    )
 
 
 @pytest.mark.asyncio
@@ -161,3 +180,54 @@ async def test_ingest_document_rejects_empty_chunk_list() -> None:
 
     with pytest.raises(ValueError, match="without chunks"):
         await repository.ingest_document(make_raw_document(), [])
+
+
+@pytest.mark.asyncio
+async def test_create_chat_log_adds_chat_log_model() -> None:
+    session = FakeAsyncSession()
+    repository = ChatLogRepository(session)  # type: ignore[arg-type]
+
+    chat_log = await repository.create_chat_log(make_chat_log_input())
+
+    assert isinstance(chat_log, ChatLog)
+    assert chat_log.request_id == "request-1"
+    assert chat_log.workspace_id == "public"
+    assert chat_log.question == "What problem does FlashAttention solve?"
+    assert chat_log.answer == "FlashAttention reduces memory traffic. [1]"
+    assert chat_log.sources == [{"source_id": "1", "title": "FlashAttention Notes"}]
+    assert chat_log.retrieval == {"mode": "hybrid_rrf_rerank"}
+    assert chat_log.usage == {"model": "fake-llm", "latency_ms": 12}
+    assert chat_log.refusal is None
+    assert chat_log.citation_valid is True
+    assert chat_log.latency_ms == 12
+    assert session.added == [chat_log]
+    assert session.flushed is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    [
+        ("request_id", "   ", "request_id"),
+        ("question", "   ", "question"),
+        ("answer", "   ", "answer"),
+        ("latency_ms", -1, "latency_ms"),
+    ],
+)
+async def test_create_chat_log_rejects_invalid_input(
+    field: str,
+    value: Any,
+    error: str,
+) -> None:
+    session = FakeAsyncSession()
+    repository = ChatLogRepository(session)  # type: ignore[arg-type]
+    log_input = make_chat_log_input()
+    invalid_input = CreateChatLogInput(
+        **{
+            **log_input.__dict__,
+            field: value,
+        }
+    )
+
+    with pytest.raises(ValueError, match=error):
+        await repository.create_chat_log(invalid_input)

@@ -1,10 +1,20 @@
 from pgvector.sqlalchemy import Vector
 
-from backend.app.db.models import EMBEDDING_DIMENSION, Base, Document, DocumentChunk
+from backend.app.db.models import (
+    EMBEDDING_DIMENSION,
+    Base,
+    ChatLog,
+    Document,
+    DocumentChunk,
+)
 
 
 def test_base_metadata_contains_core_document_tables() -> None:
-    assert set(Base.metadata.tables) == {"documents", "document_chunks"}
+    assert set(Base.metadata.tables) == {
+        "documents",
+        "document_chunks",
+        "chat_logs",
+    }
 
 
 def test_document_metadata_column_uses_safe_python_attribute_name() -> None:
@@ -33,3 +43,17 @@ def test_document_chunk_cascades_when_document_is_deleted() -> None:
 
     assert len(foreign_keys) == 1
     assert foreign_keys[0].ondelete == "CASCADE"
+
+
+def test_chat_log_has_request_and_workspace_indexes() -> None:
+    constraints = {constraint.name for constraint in ChatLog.__table__.constraints}
+    index_names = {index.name for index in ChatLog.__table__.indexes}
+
+    assert "chat_logs_request_id_key" in constraints
+    assert "chat_logs_workspace_created_at_idx" in index_names
+
+
+def test_chat_log_json_columns_use_expected_names() -> None:
+    assert ChatLog.__table__.c.sources.name == "sources"
+    assert ChatLog.__table__.c.retrieval.name == "retrieval"
+    assert ChatLog.__table__.c.usage.name == "usage"

@@ -1,11 +1,12 @@
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.db.models import EMBEDDING_DIMENSION, Document, DocumentChunk
+from backend.app.db.models import EMBEDDING_DIMENSION, ChatLog, Document, DocumentChunk
 from backend.app.rag.embeddings import validate_embedding_batch
 from ingestion.hashing import compute_content_hash
 from ingestion.models import Chunk, RawDocument
@@ -18,6 +19,20 @@ class IngestDocumentResult:
     inserted: bool
     chunks_inserted: int
     reason: str | None = None
+
+
+@dataclass(frozen=True)
+class CreateChatLogInput:
+    request_id: str
+    workspace_id: str
+    question: str
+    answer: str
+    sources: list[dict[str, Any]]
+    retrieval: dict[str, Any]
+    usage: dict[str, Any]
+    refusal: dict[str, Any] | None
+    citation_valid: bool | None
+    latency_ms: int
 
 
 class DocumentRepository:
@@ -113,3 +128,39 @@ class DocumentRepository:
             embedding=embedding,
             metadata_=dict(chunk.metadata),
         )
+
+
+class ChatLogRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def create_chat_log(self, log_input: CreateChatLogInput) -> ChatLog:
+        request_id = log_input.request_id.strip()
+        workspace_id = log_input.workspace_id.strip() or "public"
+        question = log_input.question.strip()
+
+        if not request_id:
+            raise ValueError("request_id must not be blank")
+        if not question:
+            raise ValueError("question must not be blank")
+        if not log_input.answer.strip():
+            raise ValueError("answer must not be blank")
+        if log_input.latency_ms < 0:
+            raise ValueError("latency_ms must not be negative")
+
+        chat_log = ChatLog(
+            id=uuid.uuid4(),
+            request_id=request_id,
+            workspace_id=workspace_id,
+            question=question,
+            answer=log_input.answer,
+            sources=list(log_input.sources),
+            retrieval=dict(log_input.retrieval),
+            usage=dict(log_input.usage),
+            refusal=dict(log_input.refusal) if log_input.refusal is not None else None,
+            citation_valid=log_input.citation_valid,
+            latency_ms=log_input.latency_ms,
+        )
+        self.session.add(chat_log)
+        await self.session.flush()
+        return chat_log
