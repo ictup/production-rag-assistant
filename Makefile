@@ -1,4 +1,4 @@
-.PHONY: db-up db-down db-logs migrate ingest ingest-dry-run inspect-ingestion inspect-chat-logs inspect-evals run-evals eval-gate embedding-smoke vector-smoke sparse-smoke hybrid-smoke rerank-smoke pipeline-smoke
+.PHONY: db-up db-down db-logs migrate ingest ingest-dry-run reindex-embeddings-dry-run reindex-embeddings inspect-ingestion inspect-chat-logs inspect-evals run-evals eval-gate embedding-smoke vector-smoke sparse-smoke hybrid-smoke rerank-smoke pipeline-smoke
 
 db-up:
 	docker compose up -d postgres
@@ -17,6 +17,12 @@ ingest:
 
 ingest-dry-run:
 	uv run python -m ingestion.ingest --input data/raw --workspace-id public --dry-run
+
+reindex-embeddings-dry-run:
+	uv run python -m backend.app.rag.reindex_embeddings --workspace-id public
+
+reindex-embeddings:
+	uv run python -m backend.app.rag.reindex_embeddings --workspace-id public --write
 
 inspect-ingestion:
 	uv run python -m ingestion.inspect_ingestion --min-documents 1 --min-chunks 1

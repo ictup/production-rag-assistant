@@ -18,7 +18,7 @@ https://github.com/ictup/Production_RAG_Assistant.git
 
 这是一个生产风格的 RAG assistant 后端项目。当前阶段已经完成了可本地运行、可 ingest、可检索、可回答、可记录日志、可评测、可 CI 回归的后端 MVP。
 
-当前默认仍然使用 fake embedding provider 和 fake generator，因此本地和 CI 暂时不需要真实模型 API key。OpenAI embedding provider 的代码已经接入，但默认关闭；只有把 `EMBEDDING_PROVIDER=openai` 并配置 `OPENAI_API_KEY` 后才会发真实 API 请求。
+当前默认仍然使用 fake generator。embedding 可以在 fake 和 OpenAI 之间切换；只有把 `EMBEDDING_PROVIDER=openai` 并配置 `OPENAI_API_KEY` 后才会发真实 embedding API 请求。
 
 ## 2. 已完成的主要工作
 
@@ -56,6 +56,8 @@ https://github.com/ictup/Production_RAG_Assistant.git
 - content hash 去重
 - fake embedding 生成
 - OpenAI-compatible embedding client
+- embedding provider smoke CLI
+- chunk embedding reindex CLI
 - ingest CLI
 - ingestion inspect CLI
 
@@ -303,7 +305,7 @@ uv run pytest
 当前最近一次本地通过结果：
 
 ```text
-180 passed
+199 passed
 ```
 
 ### Pipeline Smoke
@@ -347,6 +349,36 @@ uv run python -m evals.run --format summary
 uv run python -m evals.run --format summary --no-output
 ```
 
+### Embedding Provider Smoke
+
+启用 OpenAI embedding 后，先确认 key、模型和维度可用：
+
+```powershell
+uv run python -m backend.app.rag.embedding_smoke --expected-dimension 1536
+```
+
+### 重建已有 Chunk Embedding
+
+如果数据库中已有 chunk 是用 fake provider 写入的，切换到 OpenAI embedding 后必须重建 chunk embedding，否则 query embedding 和库内 embedding 不在同一向量空间，vector retrieval 质量会不可靠。
+
+先 dry-run 统计会影响多少 chunk，不会调用 OpenAI，也不会写库：
+
+```powershell
+uv run python -m backend.app.rag.reindex_embeddings --workspace-id public
+```
+
+确认后再写入：
+
+```powershell
+uv run python -m backend.app.rag.reindex_embeddings --workspace-id public --write
+```
+
+可以用 `--limit` 做小批量 smoke：
+
+```powershell
+uv run python -m backend.app.rag.reindex_embeddings --workspace-id public --limit 2 --write
+```
+
 ## 8. Makefile 命令速查
 
 ```text
@@ -356,6 +388,9 @@ make db-logs            查看 Postgres 日志
 make migrate            执行 Alembic 迁移
 make ingest             导入 data/raw
 make ingest-dry-run     只解析和 embedding，不写库
+make reindex-embeddings-dry-run
+                        统计当前 workspace 下待重建 embedding 的 chunk
+make reindex-embeddings 用当前 provider 重建并写入 chunk embedding
 make inspect-ingestion  检查文档/chunk 数量
 make inspect-chat-logs  检查 chat_logs
 make inspect-evals      检查 eval 数据集格式
@@ -466,7 +501,7 @@ Repository -> Settings -> Actions -> General
 
 ### 模型与 provider
 
-- OpenAI embedding provider 已有代码和 mock 测试，但还没有用真实 `OPENAI_API_KEY` 做联网 smoke。
+- OpenAI embedding provider 已有代码、mock 测试和联网 smoke CLI。
 - 真实 LLM generator，例如 OpenAI chat/completions。
 - provider 超时、重试、错误分类。
 - provider API key 配置校验目前只覆盖 OpenAI embedding。
@@ -485,6 +520,7 @@ Repository -> Settings -> Actions -> General
 - 文档上传 API。
 - 文档删除 API。
 - 文档重新索引 API。
+- 当前已有 CLI 级 chunk embedding reindex，但还没有 API 入口。
 - workspace 管理 API。
 - chat session / conversation API。
 - streaming chat API。
@@ -532,10 +568,11 @@ Repository -> Settings -> Actions -> General
 
 建议步骤：
 
-1. 用真实 `OPENAI_API_KEY` 跑一轮 OpenAI embedding ingest smoke。
-2. 增加 OpenAI generator provider。
-3. 增加 provider 超时、重试和错误分类测试。
-4. 用真实 key 跑一轮 ingest 和 eval。
+1. 用真实 `OPENAI_API_KEY` 跑一轮 OpenAI embedding smoke。
+2. 对已有 chunk 执行 embedding reindex，确保库内向量和 query 向量来自同一 provider。
+3. 增加 OpenAI generator provider。
+4. 增加 provider 超时、重试和错误分类测试。
+5. 用真实 key 跑一轮 ingest 和 eval。
 
 需要你提供：
 
@@ -586,14 +623,14 @@ OPENAI_API_KEY
 建议下一步优先做：
 
 ```text
-用真实 OPENAI_API_KEY 验证 OpenAI embedding provider
+重建已有 chunk embedding，并验证 vector retrieval 指向正确文档
 ```
 
 原因：
 
-- OpenAI embedding client 已经有 mock 测试，但还没经过真实 API 验证。
-- embedding provider 是 RAG 质量的第一关键依赖。
-- 完成真实 embedding smoke 后，后续接 OpenAI generator 会更稳。
+- OpenAI embedding provider 已经过真实 smoke 验证。
+- 如果旧 chunk 仍然是 fake embedding，vector retrieval 会混用两个向量空间。
+- 完成 reindex 后，再接 OpenAI generator 会更稳。
 
 启用 OpenAI embedding 后可以先跑：
 
@@ -601,7 +638,13 @@ OPENAI_API_KEY
 uv run python -m backend.app.rag.embedding_smoke --expected-dimension 1536
 ```
 
-然后再做：
+然后重建 chunk embedding：
+
+```powershell
+uv run python -m backend.app.rag.reindex_embeddings --workspace-id public --write
+```
+
+之后再做：
 
 ```text
 接入真实 LLM generator
