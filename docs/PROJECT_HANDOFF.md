@@ -18,7 +18,7 @@ https://github.com/ictup/Production_RAG_Assistant.git
 
 这是一个生产风格的 RAG assistant 后端项目。当前阶段已经完成了可本地运行、可 ingest、可检索、可回答、可记录日志、可评测、可 CI 回归的后端 MVP。
 
-当前实现仍然使用 fake embedding provider 和 fake generator，因此本地和 CI 暂时不需要真实模型 API key。后续接入 OpenAI、Azure OpenAI、Ollama 或其他模型服务时，才需要提供对应 key 和配置。
+当前默认仍然使用 fake embedding provider 和 fake generator，因此本地和 CI 暂时不需要真实模型 API key。OpenAI embedding provider 的代码已经接入，但默认关闭；只有把 `EMBEDDING_PROVIDER=openai` 并配置 `OPENAI_API_KEY` 后才会发真实 API 请求。
 
 ## 2. 已完成的主要工作
 
@@ -55,12 +55,14 @@ https://github.com/ictup/Production_RAG_Assistant.git
 - token 计数
 - content hash 去重
 - fake embedding 生成
+- OpenAI-compatible embedding client
 - ingest CLI
 - ingestion inspect CLI
 
 ### RAG Pipeline
 
 - fake embedding client
+- OpenAI embedding client
 - vector retrieval
 - sparse retrieval
 - reciprocal rank fusion
@@ -180,6 +182,18 @@ GENERATOR_PROVIDER=fake
 RERANKER_PROVIDER=none
 API_KEYS=dev-key
 ```
+
+如果要启用 OpenAI embeddings，需要改成：
+
+```text
+EMBEDDING_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+EMBEDDING_DIMENSION=1536
+```
+
+`text-embedding-3-small` 默认 1536 维，和当前 pgvector schema 匹配。
 
 ## 5. 本地启动流程
 
@@ -356,7 +370,7 @@ make pipeline-smoke     端到端 pipeline smoke
 flowchart TD
     A["Markdown files in data/raw"] --> B["ingestion.ingest"]
     B --> C["Document and chunk tables"]
-    C --> D["Fake embeddings stored in pgvector"]
+    C --> D["Embeddings stored in pgvector"]
     E["POST /chat"] --> F["API key and workspace"]
     F --> G["Question-level refusal guard"]
     G --> H["Vector retrieval"]
@@ -451,10 +465,10 @@ Repository -> Settings -> Actions -> General
 
 ### 模型与 provider
 
-- 真实 embedding provider，例如 OpenAI embeddings。
+- OpenAI embedding provider 已有代码和 mock 测试，但还没有用真实 `OPENAI_API_KEY` 做联网 smoke。
 - 真实 LLM generator，例如 OpenAI chat/completions。
 - provider 超时、重试、错误分类。
-- provider API key 配置校验。
+- provider API key 配置校验目前只覆盖 OpenAI embedding。
 - provider usage/token/cost 统计。
 
 ### 检索质量
@@ -517,9 +531,9 @@ Repository -> Settings -> Actions -> General
 
 建议步骤：
 
-1. 增加 OpenAI embedding provider。
+1. 用真实 `OPENAI_API_KEY` 跑一轮 OpenAI embedding ingest smoke。
 2. 增加 OpenAI generator provider。
-3. 增加 provider 单元测试和 fake HTTP 测试。
+3. 增加 provider 超时、重试和错误分类测试。
 4. 用真实 key 跑一轮 ingest 和 eval。
 
 需要你提供：
@@ -571,14 +585,14 @@ OPENAI_API_KEY
 建议下一步优先做：
 
 ```text
-接入真实 OpenAI embedding provider
+用真实 OPENAI_API_KEY 验证 OpenAI embedding provider
 ```
 
 原因：
 
-- 当前 fake embedding 只能证明链路，不代表真实检索质量。
+- OpenAI embedding client 已经有 mock 测试，但还没经过真实 API 验证。
 - embedding provider 是 RAG 质量的第一关键依赖。
-- 接入 embedding 后，可以复用现有 ingest、retrieval、eval、CI 结构。
+- 完成真实 embedding smoke 后，后续接 OpenAI generator 会更稳。
 
 然后再做：
 

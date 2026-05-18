@@ -19,9 +19,13 @@ class Settings(BaseSettings):
     api_keys: str = "dev-key"
     database_url: str = "postgresql+asyncpg://rag:rag@localhost:5432/rag"
     sync_database_url: str = "postgresql+psycopg://rag:rag@localhost:5432/rag"
-    embedding_provider: Literal["fake"] = "fake"
+    embedding_provider: Literal["fake", "openai"] = "fake"
     embedding_model: str = "fake-embedding"
     embedding_dimension: int = 1536
+    openai_api_key: str | None = None
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_embedding_model: str = "text-embedding-3-small"
+    openai_timeout_seconds: float = 30.0
     reranker_provider: Literal["none"] = "none"
     rerank_top_n: int = 5
     vector_top_k: int = 20
