@@ -10,7 +10,7 @@ from backend.app.rag.pipeline import (
 )
 from backend.app.rag.refusal import REFUSAL_ANSWER, RefusalInfo
 from evals.models import EvalCase, EvalDataset, EvalSuite
-from evals.run import format_report_summary, serialize_report
+from evals.run import format_report_summary, serialize_report, write_report
 from evals.runner import build_eval_report, run_eval_suite, score_eval_case
 
 
@@ -252,3 +252,36 @@ def test_report_formatters() -> None:
 
     assert '"total_cases": 1' in report_json
     assert "eval cases: 1/1 passed (100.0%)" in summary
+
+
+def test_write_report_creates_parent_directory(tmp_path) -> None:
+    eval_case = EvalCase(
+        id="rag_001",
+        question="What problem does FlashAttention solve?",
+        case_type="rag",
+        expected_sources=["flashattention"],
+        expected_keywords=["memory"],
+    )
+    result = score_eval_case(
+        eval_case,
+        response=make_response(),
+        dataset_name="rag_eval_questions",
+    )
+    suite = EvalSuite(
+        datasets=[
+            EvalDataset(
+                name="rag_eval_questions",
+                case_type="rag",
+                path="evals/datasets/rag_eval_questions.jsonl",
+                cases=[eval_case],
+            )
+        ]
+    )
+    report = build_eval_report(suite, [result])
+    output_path = tmp_path / "nested" / "latest.json"
+
+    write_report(report, output_path)
+
+    assert output_path.exists()
+    assert output_path.read_text(encoding="utf-8").endswith("\n")
+    assert '"passed_cases": 1' in output_path.read_text(encoding="utf-8")

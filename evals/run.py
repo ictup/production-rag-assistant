@@ -9,6 +9,8 @@ from evals.loaders import load_default_eval_suite
 from evals.models import EvalCase
 from evals.runner import EvalRunReport, run_eval_suite
 
+DEFAULT_REPORT_OUTPUT = Path("evals/reports/latest.json")
+
 
 def serialize_report(report: EvalRunReport) -> str:
     return json.dumps(
@@ -16,6 +18,11 @@ def serialize_report(report: EvalRunReport) -> str:
         ensure_ascii=False,
         indent=2,
     )
+
+
+def write_report(report: EvalRunReport, output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(serialize_report(report) + "\n", encoding="utf-8")
 
 
 def format_report_summary(report: EvalRunReport) -> str:
@@ -51,8 +58,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output",
         type=Path,
-        default=None,
-        help="Optional path for the full JSON report.",
+        default=DEFAULT_REPORT_OUTPUT,
+        help="Path for the full JSON report. Use --no-output to disable.",
+    )
+    parser.add_argument(
+        "--no-output",
+        action="store_true",
+        help="Do not write a report file.",
     )
     parser.add_argument(
         "--fail-on-failure",
@@ -85,13 +97,11 @@ async def async_main(argv: list[str] | None = None) -> int:
 
         report = await run_eval_suite(suite, answer_case=answer_case)
 
-    report_json = serialize_report(report)
-    if args.output is not None:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(report_json + "\n", encoding="utf-8")
+    if not args.no_output:
+        write_report(report, args.output)
 
     if args.format == "json":
-        print(report_json)
+        print(serialize_report(report))
     else:
         print(format_report_summary(report))
 
