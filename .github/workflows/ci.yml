@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend checks
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: rag
+          POSTGRES_PASSWORD: rag
+          POSTGRES_DB: rag
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rag -d rag"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      API_KEYS: dev-key
+      DATABASE_URL: postgresql+asyncpg://rag:rag@localhost:5432/rag
+      SYNC_DATABASE_URL: postgresql+psycopg://rag:rag@localhost:5432/rag
+      EMBEDDING_PROVIDER: fake
+      GENERATOR_PROVIDER: fake
+      RERANKER_PROVIDER: none
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Unit tests
+        run: uv run pytest
+
+      - name: Apply database migrations
+        run: uv run alembic upgrade head
+
+      - name: Ingest seed documents
+        run: uv run python -m ingestion.ingest --input data/raw --workspace-id public
+
+      - name: Inspect ingestion
+        run: >-
+          uv run python -m ingestion.inspect_ingestion
+          --min-documents 2
+          --min-chunks 2
+
+      - name: Pipeline smoke
+        run: uv run python -m backend.app.rag.pipeline_smoke
+
+      - name: Eval gate
+        run: >-
+          uv run python -m evals.run
+          --format summary
+          --fail-on-failure
+          --output evals/reports/ci.json
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: evals/reports/ci.json
+          if-no-files-found: ignore
