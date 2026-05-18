@@ -1,0 +1,2 @@
+{"id":"rag_001","question":"What problem does FlashAttention solve?","expected_sources":["flashattention"],"expected_keywords":["memory","IO","attention"],"must_cite":true}
+{"id":"rag_002","question":"How does PagedAttention improve KV cache memory management?","expected_sources":["pagedattention"],"expected_keywords":["KV cache","paging","memory"],"must_cite":true}

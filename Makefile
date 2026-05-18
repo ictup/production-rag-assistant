@@ -1,4 +1,4 @@
-.PHONY: db-up db-down db-logs migrate ingest ingest-dry-run inspect-ingestion inspect-chat-logs vector-smoke sparse-smoke hybrid-smoke rerank-smoke pipeline-smoke
+.PHONY: db-up db-down db-logs migrate ingest ingest-dry-run inspect-ingestion inspect-chat-logs inspect-evals vector-smoke sparse-smoke hybrid-smoke rerank-smoke pipeline-smoke
 
 db-up:
 	docker compose up -d postgres
@@ -23,6 +23,9 @@ inspect-ingestion:
 
 inspect-chat-logs:
 	uv run python -m backend.app.db.inspect_chat_logs --workspace-id public --min-logs 1
+
+inspect-evals:
+	uv run python -m evals.inspect_datasets --min-total-cases 6
 
 vector-smoke:
 	uv run python -m backend.app.rag.vector_smoke
