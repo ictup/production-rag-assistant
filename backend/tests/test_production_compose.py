@@ -47,6 +47,16 @@ def test_production_compose_orders_healthcheck_migration_and_api() -> None:
     assert services["api"]["healthcheck"]["test"][0] == "CMD"
 
 
+def test_production_postgres_enables_slow_query_observability() -> None:
+    compose = load_production_compose()
+    command = " ".join(compose["services"]["postgres"]["command"])
+
+    assert "shared_preload_libraries=pg_stat_statements" in command
+    assert "pg_stat_statements.track=all" in command
+    assert "track_io_timing=on" in command
+    assert "log_min_duration_statement=" in command
+
+
 def test_production_makefile_targets_exist() -> None:
     content = MAKEFILE_PATH.read_text(encoding="utf-8")
 

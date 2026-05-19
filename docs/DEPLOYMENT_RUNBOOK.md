@@ -3,7 +3,8 @@
 This runbook describes how to bring up, verify, update, stop, and recover the
 production-style local stack. Configuration details live in
 `docs/CONFIGURATION.md`. Metrics, dashboard, and alert templates live in
-`docs/OBSERVABILITY.md`.
+`docs/OBSERVABILITY.md`. Postgres slow query monitoring lives in
+`docs/DATABASE_OBSERVABILITY.md`.
 
 ## Scope
 
@@ -135,6 +136,14 @@ View Postgres logs:
 
 ```powershell
 docker compose -f docker-compose.prod.yml logs postgres
+```
+
+Slow queries are logged by Postgres when they meet or exceed
+`POSTGRES_LOG_MIN_DURATION_STATEMENT_MS`. For `pg_stat_statements` inspection
+queries and troubleshooting workflow, see:
+
+```text
+docs/DATABASE_OBSERVABILITY.md
 ```
 
 Inspect service status:

@@ -100,6 +100,7 @@ chunk embeddings so query vectors and stored vectors use the same model.
 | `POSTGRES_PASSWORD` | `rag` | Yes | PostgreSQL password used by Docker Compose. Replace outside local development. |
 | `POSTGRES_DB` | `rag` | Yes | PostgreSQL database name. |
 | `POSTGRES_PORT` | `5432` | No | Host port for the local Postgres service. |
+| `POSTGRES_LOG_MIN_DURATION_STATEMENT_MS` | `1000` | No | Slow query log threshold in milliseconds for Compose-managed Postgres. |
 | `API_PORT` | `8000` | No | Host port published by production compose for the API service. |
 | `DATABASE_URL` | local asyncpg URL | Yes | Async SQLAlchemy database URL for the API. |
 | `SYNC_DATABASE_URL` | local psycopg URL | Yes | Sync database URL for Alembic migrations. |

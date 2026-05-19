@@ -40,6 +40,12 @@ docs/DEPLOYMENT_RUNBOOK.md
 docs/OBSERVABILITY.md
 ```
 
+当前数据库可观测性文档：
+
+```text
+docs/DATABASE_OBSERVABILITY.md
+```
+
 ## 1. 当前项目状态
 
 这是一个生产风格的 RAG assistant 后端项目。当前阶段已经完成了可本地运行、可 ingest、可检索、可回答、可记录日志、可评测、可 CI 回归的后端 MVP。
@@ -84,7 +90,9 @@ docs/OBSERVABILITY.md
   - `0002_create_document_tables.py`
   - `0003_create_chat_logs.py`
   - `0004_create_chat_sessions.py`
+  - `0005_enable_pg_stat_statements.py`
 - 文档表、chunk 表、chat session 表、chat log 表
+- `pg_stat_statements` 扩展和 Compose 慢查询日志配置
 - async SQLAlchemy session
 - repository 层封装文档 ingest 和聊天日志写入/查询
 
@@ -212,6 +220,12 @@ docs/DEPLOYMENT_RUNBOOK.md
 
 ```text
 docs/OBSERVABILITY.md
+```
+
+Postgres 慢查询日志和 `pg_stat_statements` 排查流程见：
+
+```text
+docs/DATABASE_OBSERVABILITY.md
 ```
 
 ### 必需工具
@@ -689,7 +703,7 @@ uv run pytest
 当前最近一次本地通过结果：
 
 ```text
-331 passed
+336 passed
 ```
 
 ### Pipeline Smoke
@@ -977,7 +991,7 @@ Repository -> Settings -> Actions -> General
 
 - trace/span 集成已完成：HTTP request span、RAG pipeline 关键阶段 span、`X-Trace-ID` 关联。
 - dashboard 和 alert 模板已完成：`docs/OBSERVABILITY.md`、`monitoring/grafana/rag-dashboard.json`、`monitoring/prometheus/rag-alerts.yml`。
-- 慢查询监控。
+- 慢查询监控方案已完成：`docs/DATABASE_OBSERVABILITY.md`、`pg_stat_statements`、`log_min_duration_statement`。
 - eval 趋势记录。
 
 ## 13. 推荐后续路线
@@ -1060,7 +1074,7 @@ OPENAI_API_KEY
 建议下一步优先做：
 
 ```text
-慢查询监控方案
+eval 趋势记录
 ```
 
 原因：
@@ -1073,7 +1087,7 @@ OPENAI_API_KEY
 - OpenAI provider 已有超时、有限重试和错误分类。
 - OpenAI provider 错误已可映射到 API 响应、日志和 metrics。
 - provider token 统计和 embedding/generation latency 细分已完成，可以支持基础成本估算和性能观察。
-- chat session 表、repository、基础 API、`/chat` 的 `session_id` 挂载、conversation history API、API 层 SSE streaming、底层 OpenAI Responses token streaming、最小聊天 UI、文档上传/reindex UI、backend Dockerfile、production compose、CORS、基础 rate limit、配置/secrets 文档、部署 runbook、dashboard 和 alert 模板、trace/span 日志都已完成，下一步补 Postgres 慢查询监控方案。
+- chat session 表、repository、基础 API、`/chat` 的 `session_id` 挂载、conversation history API、API 层 SSE streaming、底层 OpenAI Responses token streaming、最小聊天 UI、文档上传/reindex UI、backend Dockerfile、production compose、CORS、基础 rate limit、配置/secrets 文档、部署 runbook、dashboard 和 alert 模板、trace/span 日志和慢查询监控方案都已完成，下一步补 eval 趋势记录。
 
 启用 OpenAI embedding 后可以先跑：
 
