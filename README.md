@@ -10,6 +10,7 @@ Start here:
 - [Deployment runbook](docs/DEPLOYMENT_RUNBOOK.md)
 - [Observability guide](docs/OBSERVABILITY.md)
 - [Database observability guide](docs/DATABASE_OBSERVABILITY.md)
+- [Eval trends guide](docs/EVAL_TRENDS.md)
 
 Local web UI after starting the API:
 

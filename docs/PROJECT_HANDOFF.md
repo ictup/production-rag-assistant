@@ -46,6 +46,12 @@ docs/OBSERVABILITY.md
 docs/DATABASE_OBSERVABILITY.md
 ```
 
+当前 eval 趋势文档：
+
+```text
+docs/EVAL_TRENDS.md
+```
+
 ## 1. 当前项目状态
 
 这是一个生产风格的 RAG assistant 后端项目。当前阶段已经完成了可本地运行、可 ingest、可检索、可回答、可记录日志、可评测、可 CI 回归的后端 MVP。
@@ -144,8 +150,10 @@ docs/DATABASE_OBSERVABILITY.md
 - eval dataset loader
 - deterministic eval runner
 - eval summary 和 JSON report
+- eval JSONL trend record
 - `eval-gate` 失败门禁
 - 默认本地报告：`evals/reports/latest.json`
+- 默认本地趋势文件：`evals/reports/trends.jsonl`
 - CI 报告：`evals/reports/ci.json`
 
 ### CI
@@ -189,6 +197,7 @@ evals/
   loaders.py          eval dataset loader
   models.py           eval 数据模型
   runner.py           deterministic eval runner
+  trends.py           eval JSONL 趋势记录
   run.py              eval CLI
 
 data/raw/
@@ -703,7 +712,7 @@ uv run pytest
 当前最近一次本地通过结果：
 
 ```text
-336 passed
+342 passed
 ```
 
 ### Pipeline Smoke
@@ -758,6 +767,22 @@ uv run python -m evals.run --format summary
 ```powershell
 uv run python -m evals.run --format summary --no-output
 ```
+
+### 追加 eval JSONL 趋势记录
+
+默认建议写入：
+
+```text
+evals/reports/trends.jsonl
+```
+
+命令：
+
+```powershell
+uv run python -m evals.run --format summary --trend-output evals/reports/trends.jsonl
+```
+
+该文件是本地运行产物，已被 `.gitignore` 忽略。详细字段见 `docs/EVAL_TRENDS.md`。
 
 ### Embedding Provider Smoke
 
@@ -826,6 +851,7 @@ make inspect-evals      检查 eval 数据集格式
 make run-evals          运行 eval summary
 make eval-gate          eval 失败时返回非零退出码
 make eval-gate-openai   用 OpenAI embedding/generator 运行真实 eval gate
+make eval-trend         运行 eval summary 并追加 JSONL 趋势记录
 make embedding-smoke    验证当前 embedding provider 能返回正确维度
 make generator-smoke    验证当前 generator provider 能返回非空答案
 make pipeline-smoke     端到端 pipeline smoke
@@ -992,7 +1018,7 @@ Repository -> Settings -> Actions -> General
 - trace/span 集成已完成：HTTP request span、RAG pipeline 关键阶段 span、`X-Trace-ID` 关联。
 - dashboard 和 alert 模板已完成：`docs/OBSERVABILITY.md`、`monitoring/grafana/rag-dashboard.json`、`monitoring/prometheus/rag-alerts.yml`。
 - 慢查询监控方案已完成：`docs/DATABASE_OBSERVABILITY.md`、`pg_stat_statements`、`log_min_duration_statement`。
-- eval 趋势记录。
+- eval 趋势记录已完成：`docs/EVAL_TRENDS.md`、`evals/trends.py`、`--trend-output`。
 
 ## 13. 推荐后续路线
 
@@ -1068,13 +1094,14 @@ OPENAI_API_KEY
 5. 环境变量和 secrets 文档。已完成。
 6. 部署 runbook。已完成。
 7. dashboard 和 alert。已完成。
+8. eval 趋势记录。已完成。
 
 ## 14. 当前优先级建议
 
 建议下一步优先做：
 
 ```text
-eval 趋势记录
+更完整的认证和权限模型
 ```
 
 原因：
@@ -1087,7 +1114,7 @@ eval 趋势记录
 - OpenAI provider 已有超时、有限重试和错误分类。
 - OpenAI provider 错误已可映射到 API 响应、日志和 metrics。
 - provider token 统计和 embedding/generation latency 细分已完成，可以支持基础成本估算和性能观察。
-- chat session 表、repository、基础 API、`/chat` 的 `session_id` 挂载、conversation history API、API 层 SSE streaming、底层 OpenAI Responses token streaming、最小聊天 UI、文档上传/reindex UI、backend Dockerfile、production compose、CORS、基础 rate limit、配置/secrets 文档、部署 runbook、dashboard 和 alert 模板、trace/span 日志和慢查询监控方案都已完成，下一步补 eval 趋势记录。
+- chat session 表、repository、基础 API、`/chat` 的 `session_id` 挂载、conversation history API、API 层 SSE streaming、底层 OpenAI Responses token streaming、最小聊天 UI、文档上传/reindex UI、backend Dockerfile、production compose、CORS、基础 rate limit、配置/secrets 文档、部署 runbook、dashboard 和 alert 模板、trace/span 日志、慢查询监控方案和 eval 趋势记录都已完成，下一步补更完整的认证和权限模型。
 
 启用 OpenAI embedding 后可以先跑：
 

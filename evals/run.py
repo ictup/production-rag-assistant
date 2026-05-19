@@ -10,8 +10,14 @@ from backend.app.rag.pipeline import ChatPipelineRequest, RagPipeline
 from evals.loaders import load_default_eval_suite
 from evals.models import EvalCase
 from evals.runner import EvalRunReport, run_eval_suite
+from evals.trends import (
+    TrendMetadataValue,
+    build_eval_trend_record,
+    write_trend_record,
+)
 
 DEFAULT_REPORT_OUTPUT = Path("evals/reports/latest.json")
+DEFAULT_TREND_OUTPUT = Path("evals/reports/trends.jsonl")
 ProviderName = Literal["fake", "openai"]
 
 
@@ -69,6 +75,27 @@ def build_eval_settings(
     return Settings(**{**settings.model_dump(), **updates})
 
 
+def build_trend_metadata(
+    *,
+    args: argparse.Namespace,
+    settings: Settings,
+) -> dict[str, TrendMetadataValue]:
+    return {
+        "datasets_dir": args.datasets_dir.as_posix(),
+        "workspace_id": args.workspace_id,
+        "embedding_provider": settings.embedding_provider,
+        "embedding_model": settings.embedding_model,
+        "generator_provider": settings.generator_provider,
+        "llm_model": settings.llm_model,
+        "vector_top_k": args.vector_top_k,
+        "sparse_top_k": args.sparse_top_k,
+        "fused_top_k": args.fused_top_k,
+        "rerank_top_n": args.rerank_top_n,
+        "rerank": not args.no_rerank,
+        "openai_max_output_tokens": settings.openai_max_output_tokens,
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run deterministic RAG evals.")
     parser.add_argument("--datasets-dir", type=Path, default=Path("evals/datasets"))
@@ -119,6 +146,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not write a report file.",
     )
     parser.add_argument(
+        "--trend-output",
+        type=Path,
+        default=None,
+        help=(
+            "Append a compact JSONL trend record to this path. "
+            f"Suggested default: {DEFAULT_TREND_OUTPUT}"
+        ),
+    )
+    parser.add_argument(
         "--fail-on-failure",
         action="store_true",
         help="Exit with code 1 when any eval case fails.",
@@ -157,6 +193,15 @@ async def async_main(argv: list[str] | None = None) -> int:
 
     if not args.no_output:
         write_report(report, args.output)
+
+    if args.trend_output is not None:
+        write_trend_record(
+            build_eval_trend_record(
+                report,
+                metadata=build_trend_metadata(args=args, settings=settings),
+            ),
+            args.trend_output,
+        )
 
     if args.format == "json":
         print(serialize_report(report))
