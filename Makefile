@@ -1,4 +1,4 @@
-.PHONY: db-up db-down db-logs migrate ingest ingest-dry-run reindex-embeddings-dry-run reindex-embeddings inspect-ingestion inspect-chat-logs inspect-evals run-evals eval-gate eval-gate-openai embedding-smoke generator-smoke vector-smoke sparse-smoke hybrid-smoke rerank-smoke pipeline-smoke pipeline-smoke-openai
+.PHONY: db-up db-down db-logs prod-config prod-build prod-up prod-down prod-logs migrate ingest ingest-dry-run reindex-embeddings-dry-run reindex-embeddings inspect-ingestion inspect-chat-logs inspect-evals run-evals eval-gate eval-gate-openai embedding-smoke generator-smoke vector-smoke sparse-smoke hybrid-smoke rerank-smoke pipeline-smoke pipeline-smoke-openai
 
 db-up:
 	docker compose up -d postgres
@@ -8,6 +8,21 @@ db-down:
 
 db-logs:
 	docker compose logs -f postgres
+
+prod-config:
+	docker compose -f docker-compose.prod.yml config --quiet
+
+prod-build:
+	docker compose -f docker-compose.prod.yml build api
+
+prod-up:
+	docker compose -f docker-compose.prod.yml up -d --build
+
+prod-down:
+	docker compose -f docker-compose.prod.yml down
+
+prod-logs:
+	docker compose -f docker-compose.prod.yml logs -f api
 
 migrate:
 	uv run alembic upgrade head

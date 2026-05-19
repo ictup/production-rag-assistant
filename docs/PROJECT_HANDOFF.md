@@ -19,6 +19,7 @@ https://github.com/ictup/Production_RAG_Assistant.git
 ```text
 Dockerfile
 .dockerignore
+docker-compose.prod.yml
 ```
 
 ## 1. 当前项目状态
@@ -295,7 +296,47 @@ docker build -t production-rag-assistant:local .
 docker run --rm --env-file .env -p 8000:8000 production-rag-assistant:local
 ```
 
-注意：如果容器需要连接宿主机上的 Postgres，`.env` 里的数据库 host 不能写 `localhost`，需要改成 `host.docker.internal`。下一步 production compose 会把 API 和 Postgres 放到同一个 Docker network 中，届时可以使用服务名连接。
+注意：如果只单独运行 API 容器，并且需要连接宿主机上的 Postgres，`.env` 里的数据库 host 不能写 `localhost`，需要改成 `host.docker.internal`。
+
+### 7. 启动 production-style 本地栈
+
+production compose 会把 API、migration job 和 Postgres 放在同一个 Docker network 中。API 容器内部使用 `postgres:5432` 访问数据库，不再依赖宿主机 `localhost`。
+
+首次运行前创建 `.env`：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+如果本机 `8000` 端口已被占用，先把 `.env` 中的 `API_PORT` 改成空闲端口，例如：
+
+```text
+API_PORT=8002
+```
+
+校验 compose 配置：
+
+```powershell
+docker compose -f docker-compose.prod.yml config --quiet
+```
+
+启动完整栈：
+
+```powershell
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+查看 API 日志：
+
+```powershell
+docker compose -f docker-compose.prod.yml logs -f api
+```
+
+停止完整栈：
+
+```powershell
+docker compose -f docker-compose.prod.yml down
+```
 
 ## 6. API 快速验证
 
@@ -584,7 +625,7 @@ uv run pytest
 当前最近一次本地通过结果：
 
 ```text
-291 passed
+295 passed
 ```
 
 ### Pipeline Smoke
@@ -690,6 +731,11 @@ uv run python -m backend.app.rag.reindex_embeddings --workspace-id public --limi
 make db-up              启动 Postgres/pgvector
 make db-down            停止 Docker Compose 服务
 make db-logs            查看 Postgres 日志
+make prod-config        静默校验 production compose 配置
+make prod-build         构建 production API 镜像
+make prod-up            启动 production-style 本地栈
+make prod-down          停止 production-style 本地栈
+make prod-logs          查看 production API 日志
 make migrate            执行 Alembic 迁移
 make ingest             导入 data/raw
 make ingest-dry-run     只解析和 embedding，不写库
@@ -855,7 +901,7 @@ Repository -> Settings -> Actions -> General
 
 - backend Dockerfile 已完成：`Dockerfile`。
 - `.dockerignore` 已完成，排除 `.env`、`.venv`、缓存和本地报告。
-- production docker-compose。
+- production docker-compose 已完成：`docker-compose.prod.yml`。
 - 部署说明。
 - CORS 策略。
 - rate limit。
@@ -936,8 +982,8 @@ OPENAI_API_KEY
 
 建议步骤：
 
-1. backend Dockerfile。
-2. production compose。
+1. backend Dockerfile。已完成。
+2. production compose。已完成。
 3. 环境变量和 secrets 文档。
 4. rate limit。
 5. CORS。
@@ -948,7 +994,7 @@ OPENAI_API_KEY
 建议下一步优先做：
 
 ```text
-生产部署第二步：production docker-compose
+生产化 API 边界：CORS 与 rate limit
 ```
 
 原因：
@@ -961,7 +1007,7 @@ OPENAI_API_KEY
 - OpenAI provider 已有超时、有限重试和错误分类。
 - OpenAI provider 错误已可映射到 API 响应、日志和 metrics。
 - provider token 统计和 embedding/generation latency 细分已完成，可以支持基础成本估算和性能观察。
-- chat session 表、repository、基础 API、`/chat` 的 `session_id` 挂载、conversation history API、API 层 SSE streaming、底层 OpenAI Responses token streaming、最小聊天 UI、文档上传/reindex UI 和 backend Dockerfile 都已完成，下一步补 production docker-compose。
+- chat session 表、repository、基础 API、`/chat` 的 `session_id` 挂载、conversation history API、API 层 SSE streaming、底层 OpenAI Responses token streaming、最小聊天 UI、文档上传/reindex UI、backend Dockerfile 和 production compose 都已完成，下一步收紧 API 的跨域与请求速率边界。
 
 启用 OpenAI embedding 后可以先跑：
 
