@@ -14,6 +14,7 @@ from backend.app.api import (
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.cors import add_cors_middleware
 from backend.app.core.logging import RequestLoggingMiddleware, configure_logging
+from backend.app.core.rate_limit import add_rate_limit_middleware
 from backend.app.core.request_id import RequestIDMiddleware
 from backend.app.observability.metrics import RequestMetricsMiddleware
 
@@ -29,6 +30,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version=settings.app_version,
     )
     app.state.settings = settings
+    add_rate_limit_middleware(app, settings)
     app.add_middleware(RequestIDMiddleware)
     app.add_middleware(RequestMetricsMiddleware)
     app.add_middleware(RequestLoggingMiddleware)

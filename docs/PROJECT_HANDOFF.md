@@ -51,6 +51,7 @@ docker-compose.prod.yml
 - workspace 隔离头：`X-Workspace-ID`
 - request id 中间件：支持客户端传入 `X-Request-ID`
 - 结构化请求日志中间件
+- 基础 rate limit 中间件：默认关闭，可按 API key 哈希或客户端 IP 限流
 - HTTP 请求指标、RAG refusal 指标、无效 citation 指标、provider token/latency 指标
 - OpenAI provider 错误会映射为结构化 API 错误、日志和 metrics
 - Web UI：`GET /app/`，支持 session、history、SSE streaming chat、文档上传和 reindex
@@ -241,6 +242,17 @@ CORS_ALLOW_CREDENTIALS=false
 ```
 
 默认 `CORS_ALLOW_CREDENTIALS=false`。当前 API 使用 `Authorization: Bearer ...`，通常不需要浏览器 cookie credential。
+
+基础 rate limit 默认关闭。单实例部署或本地 production compose 可以先开启：
+
+```text
+RATE_LIMIT_ENABLED=true
+RATE_LIMIT_REQUESTS=60
+RATE_LIMIT_WINDOW_SECONDS=60
+RATE_LIMIT_EXCLUDED_PATHS=/health,/metrics,/app,/openapi.json,/docs,/redoc
+```
+
+限流身份优先使用 `Authorization: Bearer ...` 的 token 哈希；没有 token 时使用客户端 IP。当前实现是进程内滑动窗口，适合单实例保护。多副本部署时应迁移到 Redis、API gateway 或反向代理层限流。
 
 ## 5. 本地启动流程
 
@@ -635,7 +647,7 @@ uv run pytest
 当前最近一次本地通过结果：
 
 ```text
-301 passed
+311 passed
 ```
 
 ### Pipeline Smoke
@@ -914,7 +926,7 @@ Repository -> Settings -> Actions -> General
 - production docker-compose 已完成：`docker-compose.prod.yml`。
 - 部署说明。
 - CORS 策略已完成：默认关闭，通过 `CORS_ALLOWED_ORIGINS` 或 `CORS_ALLOWED_ORIGIN_REGEX` 显式开启。
-- rate limit。
+- rate limit 已完成：默认关闭，通过 `RATE_LIMIT_ENABLED` 显式开启。
 - 更完整的认证和权限模型。
 - secrets 管理。
 
@@ -995,8 +1007,8 @@ OPENAI_API_KEY
 1. backend Dockerfile。已完成。
 2. production compose。已完成。
 3. CORS。已完成。
-4. 环境变量和 secrets 文档。
-5. rate limit。
+4. rate limit。已完成。
+5. 环境变量和 secrets 文档。
 6. dashboard 和 alert。
 
 ## 14. 当前优先级建议
@@ -1004,7 +1016,7 @@ OPENAI_API_KEY
 建议下一步优先做：
 
 ```text
-生产化 API 边界：rate limit
+生产化配置收口：环境变量和 secrets 文档
 ```
 
 原因：
@@ -1017,7 +1029,7 @@ OPENAI_API_KEY
 - OpenAI provider 已有超时、有限重试和错误分类。
 - OpenAI provider 错误已可映射到 API 响应、日志和 metrics。
 - provider token 统计和 embedding/generation latency 细分已完成，可以支持基础成本估算和性能观察。
-- chat session 表、repository、基础 API、`/chat` 的 `session_id` 挂载、conversation history API、API 层 SSE streaming、底层 OpenAI Responses token streaming、最小聊天 UI、文档上传/reindex UI、backend Dockerfile、production compose 和 CORS 都已完成，下一步补 API 请求速率边界。
+- chat session 表、repository、基础 API、`/chat` 的 `session_id` 挂载、conversation history API、API 层 SSE streaming、底层 OpenAI Responses token streaming、最小聊天 UI、文档上传/reindex UI、backend Dockerfile、production compose、CORS 和基础 rate limit 都已完成，下一步系统整理环境变量、secrets 和生产配置说明。
 
 启用 OpenAI embedding 后可以先跑：
 

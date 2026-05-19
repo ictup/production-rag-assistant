@@ -1,6 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,6 +33,12 @@ class Settings(BaseSettings):
     cors_allowed_origins: str = ""
     cors_allowed_origin_regex: str | None = None
     cors_allow_credentials: bool = False
+    rate_limit_enabled: bool = False
+    rate_limit_requests: int = Field(default=60, gt=0)
+    rate_limit_window_seconds: float = Field(default=60.0, gt=0)
+    rate_limit_excluded_paths: str = (
+        "/health,/metrics,/app,/openapi.json,/docs,/redoc"
+    )
     reranker_provider: Literal["none"] = "none"
     rerank_top_n: int = 5
     vector_top_k: int = 20
