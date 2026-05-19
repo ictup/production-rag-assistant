@@ -76,6 +76,23 @@ def test_metrics_registry_records_rag_business_metrics() -> None:
     assert_metric_line(output, "rag_citation_invalid_total 1")
 
 
+def test_metrics_registry_records_provider_errors() -> None:
+    registry = MetricsRegistry()
+
+    registry.observe_provider_error(
+        provider="openai",
+        operation="OpenAI response request",
+        category="rate_limit",
+    )
+
+    output = registry.render_prometheus()
+    assert_metric_line(
+        output,
+        'rag_provider_errors_total{provider="openai",'
+        'operation="OpenAI response request",category="rate_limit"} 1',
+    )
+
+
 def test_metrics_route_returns_prometheus_text() -> None:
     metrics_registry.reset()
     metrics_registry.observe_http_request(

@@ -1,6 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_chat
@@ -10,6 +11,7 @@ from backend.app.db.repositories import CreateChatLogInput
 from backend.app.main import create_app
 from backend.app.observability.metrics import metrics_registry
 from backend.app.rag.citations import Source
+from backend.app.rag.openai_provider import OpenAIErrorInfo, OpenAIProviderError
 from backend.app.rag.pipeline import (
     ChatPipelineRequest,
     ChatPipelineResponse,
@@ -27,16 +29,20 @@ class FakePipeline:
         *,
         citation_valid: bool | None = True,
         refusal: RefusalInfo | None = None,
+        error: Exception | None = None,
     ) -> None:
         self.requests: list[ChatPipelineRequest] = []
         self.citation_valid = citation_valid
         self.refusal = refusal
+        self.error = error
 
     async def answer_question(
         self,
         request: ChatPipelineRequest,
     ) -> ChatPipelineResponse:
         self.requests.append(request)
+        if self.error is not None:
+            raise self.error
         is_refusal = self.refusal is not None
         answer = (
             REFUSAL_ANSWER
@@ -117,6 +123,23 @@ def make_chat_log_model() -> ChatLog:
         citation_valid=True,
         latency_ms=12,
         created_at=datetime(2026, 5, 18, 8, 0, tzinfo=UTC),
+    )
+
+
+def make_provider_error(
+    *,
+    category: str = "rate_limit",
+    retryable: bool = True,
+    status_code: int | None = 429,
+) -> OpenAIProviderError:
+    return OpenAIProviderError(
+        OpenAIErrorInfo(
+            operation="OpenAI response request",
+            category=category,
+            message=f"OpenAI response request failed ({category})",
+            retryable=retryable,
+            status_code=status_code,
+        )
     )
 
 
@@ -311,6 +334,72 @@ def test_chat_route_records_invalid_citation_metric() -> None:
 
     assert response.status_code == 200
     assert "rag_citation_invalid_total 1" in metrics_registry.render_prometheus()
+
+
+@pytest.mark.parametrize(
+    ("category", "retryable", "status_code", "expected_status_code"),
+    [
+        ("rate_limit", True, 429, 429),
+        ("timeout", True, None, 504),
+        ("network", True, None, 503),
+        ("authentication", False, 401, 502),
+        ("invalid_request", False, 400, 502),
+    ],
+)
+def test_chat_route_maps_provider_errors_to_api_response_and_metrics(
+    category: str,
+    retryable: bool,
+    status_code: int | None,
+    expected_status_code: int,
+) -> None:
+    metrics_registry.reset()
+    provider_error = make_provider_error(
+        category=category,
+        retryable=retryable,
+        status_code=status_code,
+    )
+    fake_pipeline = FakePipeline(error=provider_error)
+    fake_chat_log_repository = FakeChatLogRepository()
+    client = build_client(fake_pipeline, fake_chat_log_repository)
+
+    response = client.post(
+        "/chat",
+        headers=AUTH_HEADERS,
+        json={"question": "What is FlashAttention?"},
+    )
+
+    assert response.status_code == expected_status_code
+    body = response.json()
+    assert body["detail"]["error"] == "provider_error"
+    assert body["detail"]["provider"] == "openai"
+    assert body["detail"]["category"] == category
+    assert body["detail"]["retryable"] is retryable
+    assert body["detail"]["request_id"] == response.headers["X-Request-ID"]
+    assert fake_chat_log_repository.inputs == []
+    assert (
+        'rag_provider_errors_total{provider="openai",'
+        'operation="OpenAI response request",'
+        f'category="{category}"}} 1'
+    ) in metrics_registry.render_prometheus()
+
+
+def test_chat_route_logs_provider_error(caplog) -> None:
+    metrics_registry.reset()
+    fake_pipeline = FakePipeline(
+        error=make_provider_error(category="rate_limit", retryable=True)
+    )
+    client = build_client(fake_pipeline)
+
+    with caplog.at_level("WARNING", logger=routes_chat.PROVIDER_LOGGER_NAME):
+        response = client.post(
+            "/chat",
+            headers=AUTH_HEADERS,
+            json={"question": "What is FlashAttention?"},
+        )
+
+    assert response.status_code == 429
+    assert '"event":"provider_error"' in caplog.text
+    assert '"category":"rate_limit"' in caplog.text
 
 
 def test_openapi_exposes_chat_route() -> None:

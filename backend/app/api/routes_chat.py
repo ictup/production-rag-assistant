@@ -1,17 +1,32 @@
+import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.security import require_api_key
+from backend.app.core.logging import serialize_log_payload
 from backend.app.core.request_id import get_request_id
 from backend.app.db.repositories import ChatLogRepository, CreateChatLogInput
 from backend.app.db.session import get_db_session
 from backend.app.observability.metrics import metrics_registry
+from backend.app.rag.openai_provider import OpenAIProviderError
 from backend.app.rag.pipeline import ChatPipelineResponse, RagPipeline
 from backend.app.schemas.chat import ChatLogsResponse, ChatRequest, ChatResponse
 
 router = APIRouter(tags=["chat"])
+PROVIDER_LOGGER_NAME = "backend.provider"
+PROVIDER_ERROR_STATUS_BY_CATEGORY = {
+    "authentication": 502,
+    "permission": 502,
+    "not_found": 502,
+    "invalid_request": 502,
+    "rate_limit": 429,
+    "timeout": 504,
+    "network": 503,
+    "server_error": 502,
+    "conflict": 503,
+}
 
 
 async def get_rag_pipeline(
@@ -59,6 +74,47 @@ def build_chat_log_input(
     )
 
 
+def map_provider_error_status(error: OpenAIProviderError) -> int:
+    return PROVIDER_ERROR_STATUS_BY_CATEGORY.get(error.category, 502)
+
+
+def build_provider_error_detail(
+    *,
+    error: OpenAIProviderError,
+    request_id: str,
+) -> dict[str, object]:
+    return {
+        "error": "provider_error",
+        "provider": "openai",
+        "category": error.category,
+        "retryable": error.retryable,
+        "request_id": request_id,
+        "message": "The upstream OpenAI provider failed while processing the request.",
+    }
+
+
+def log_provider_error(
+    *,
+    error: OpenAIProviderError,
+    request_id: str,
+    workspace_id: str,
+) -> None:
+    logging.getLogger(PROVIDER_LOGGER_NAME).warning(
+        serialize_log_payload(
+            {
+                "event": "provider_error",
+                "provider": "openai",
+                "operation": error.operation,
+                "category": error.category,
+                "retryable": error.retryable,
+                "status_code": error.status_code,
+                "request_id": request_id,
+                "workspace_id": workspace_id,
+            }
+        )
+    )
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     http_request: Request,
@@ -73,11 +129,28 @@ async def chat(
 ) -> ChatResponse:
     request_id = get_request_id(http_request)
     normalized_workspace_id = normalize_workspace_id(workspace_id)
-    response = await pipeline.answer_question(
-        request.to_pipeline_request(
+    try:
+        response = await pipeline.answer_question(
+            request.to_pipeline_request(
+                workspace_id=normalized_workspace_id,
+            )
+        )
+    except OpenAIProviderError as exc:
+        metrics_registry.observe_provider_error(
+            provider="openai",
+            operation=exc.operation,
+            category=exc.category,
+        )
+        log_provider_error(
+            error=exc,
+            request_id=request_id,
             workspace_id=normalized_workspace_id,
         )
-    )
+        raise HTTPException(
+            status_code=map_provider_error_status(exc),
+            detail=build_provider_error_detail(error=exc, request_id=request_id),
+        ) from exc
+
     metrics_registry.observe_rag_response(
         refusal_reason=response.refusal.reason if response.refusal else None,
         citation_valid=response.citation_valid,

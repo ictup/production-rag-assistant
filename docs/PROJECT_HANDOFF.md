@@ -34,6 +34,7 @@ https://github.com/ictup/Production_RAG_Assistant.git
 - request id 中间件：支持客户端传入 `X-Request-ID`
 - 结构化请求日志中间件
 - HTTP 请求指标、RAG refusal 指标、无效 citation 指标
+- OpenAI provider 错误会映射为结构化 API 错误、日志和 metrics
 
 ### 数据库与迁移
 
@@ -287,6 +288,20 @@ curl.exe -X POST http://127.0.0.1:8000/chat `
 - `citation_valid`
 - `request_id`
 
+如果 OpenAI provider 失败，响应会包含结构化错误：
+
+```json
+{
+  "detail": {
+    "error": "provider_error",
+    "provider": "openai",
+    "category": "rate_limit",
+    "retryable": true,
+    "request_id": "..."
+  }
+}
+```
+
 ### Chat Logs
 
 ```powershell
@@ -299,6 +314,12 @@ curl.exe http://127.0.0.1:8000/chat/logs `
 
 ```powershell
 curl.exe http://127.0.0.1:8000/metrics
+```
+
+Provider 失败会暴露为：
+
+```text
+rag_provider_errors_total{provider="openai",operation="OpenAI response request",category="rate_limit"} 1
 ```
 
 ## 7. 常用验证命令
@@ -318,7 +339,7 @@ uv run pytest
 当前最近一次本地通过结果：
 
 ```text
-214 passed
+221 passed
 ```
 
 ### Pipeline Smoke
@@ -547,8 +568,9 @@ Repository -> Settings -> Actions -> General
 - OpenAI embedding provider 已有代码、mock 测试和联网 smoke CLI。
 - OpenAI generator provider 已有代码和 smoke CLI。
 - OpenAI provider 超时、有限重试和错误分类。
+- OpenAI provider API 错误响应、结构化日志和 metrics。
 - provider API key 配置校验目前覆盖 OpenAI embedding 和 OpenAI generator。
-- provider cost 统计和更细粒度 metrics。
+- provider cost 统计和更细粒度 latency metrics。
 
 ### 检索质量
 
@@ -616,7 +638,8 @@ Repository -> Settings -> Actions -> General
 3. 用 OpenAI generator 跑 pipeline smoke。
 4. 用 OpenAI generator 跑 eval gate。
 5. 增加 provider 超时、重试和错误分类。
-6. 增加 provider API 错误响应、metrics 和 cost 统计。
+6. 增加 provider API 错误响应和 metrics。
+7. 增加 provider cost 统计和 latency 细分。
 
 需要你提供：
 
@@ -667,7 +690,7 @@ OPENAI_API_KEY
 建议下一步优先做：
 
 ```text
-增加 provider API 错误响应和 metrics
+增加 provider cost 统计和 latency 细分
 ```
 
 原因：
@@ -678,7 +701,8 @@ OPENAI_API_KEY
 - 真实端到端 pipeline smoke 已可通过 provider/model override 运行。
 - OpenAI generator 已可纳入 eval runner。
 - OpenAI provider 已有超时、有限重试和错误分类。
-- 下一步应把 provider 错误映射到 API 响应、日志和 metrics，方便排查线上失败。
+- OpenAI provider 错误已可映射到 API 响应、日志和 metrics。
+- 下一步应补充 provider cost 统计和 latency 细分，方便估算真实运行成本。
 
 启用 OpenAI embedding 后可以先跑：
 

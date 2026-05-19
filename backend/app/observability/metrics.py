@@ -53,6 +53,7 @@ class MetricsRegistry:
         self._latency_sums: dict[tuple[str, str], float] = defaultdict(float)
         self._rag_refusal_counts: dict[str, int] = defaultdict(int)
         self._rag_citation_invalid_total = 0
+        self._provider_error_counts: dict[tuple[str, str, str], int] = defaultdict(int)
 
     def reset(self) -> None:
         with self._lock:
@@ -62,6 +63,7 @@ class MetricsRegistry:
             self._latency_sums.clear()
             self._rag_refusal_counts.clear()
             self._rag_citation_invalid_total = 0
+            self._provider_error_counts.clear()
 
     def observe_http_request(
         self,
@@ -96,6 +98,16 @@ class MetricsRegistry:
             if citation_valid is False:
                 self._rag_citation_invalid_total += 1
 
+    def observe_provider_error(
+        self,
+        *,
+        provider: str,
+        operation: str,
+        category: str,
+    ) -> None:
+        with self._lock:
+            self._provider_error_counts[(provider, operation, category)] += 1
+
     def render_prometheus(self) -> str:
         with self._lock:
             request_counts = dict(self._request_counts)
@@ -107,6 +119,7 @@ class MetricsRegistry:
             latency_sums = dict(self._latency_sums)
             rag_refusal_counts = dict(self._rag_refusal_counts)
             rag_citation_invalid_total = self._rag_citation_invalid_total
+            provider_error_counts = dict(self._provider_error_counts)
 
         lines = [
             "# HELP rag_requests_total Total HTTP requests.",
@@ -188,6 +201,24 @@ class MetricsRegistry:
                 f"rag_citation_invalid_total {rag_citation_invalid_total}",
             ]
         )
+        lines.extend(
+            [
+                "# HELP rag_provider_errors_total Total upstream provider errors.",
+                "# TYPE rag_provider_errors_total counter",
+            ]
+        )
+        for provider, operation, category in sorted(provider_error_counts):
+            labels = format_labels(
+                {
+                    "provider": provider,
+                    "operation": operation,
+                    "category": category,
+                }
+            )
+            lines.append(
+                f"rag_provider_errors_total{{{labels}}} "
+                f"{provider_error_counts[(provider, operation, category)]}"
+            )
 
         return "\n".join(lines) + "\n"
 
