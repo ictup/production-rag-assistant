@@ -8,6 +8,7 @@ Start here:
 - [Project handoff and quick start](docs/PROJECT_HANDOFF.md)
 - [Configuration and secrets guide](docs/CONFIGURATION.md)
 - [Deployment runbook](docs/DEPLOYMENT_RUNBOOK.md)
+- [Observability guide](docs/OBSERVABILITY.md)
 
 Local web UI after starting the API:
 

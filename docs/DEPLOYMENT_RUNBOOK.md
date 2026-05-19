@@ -2,7 +2,8 @@
 
 This runbook describes how to bring up, verify, update, stop, and recover the
 production-style local stack. Configuration details live in
-`docs/CONFIGURATION.md`.
+`docs/CONFIGURATION.md`. Metrics, dashboard, and alert templates live in
+`docs/OBSERVABILITY.md`.
 
 ## Scope
 

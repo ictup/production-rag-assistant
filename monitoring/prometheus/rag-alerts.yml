@@ -1,0 +1,96 @@
+groups:
+  - name: production-rag-assistant
+    rules:
+      - alert: RAGHigh5xxRate
+        expr: |
+          sum(rate(rag_requests_total{status_code=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(rag_requests_total[5m])), 0.001)
+          > 0.05
+        for: 10m
+        labels:
+          severity: page
+          service: production-rag-assistant
+        annotations:
+          summary: "High 5xx error rate"
+          description: "More than 5% of API requests are returning 5xx responses."
+
+      - alert: RAGHighRateLimitRate
+        expr: |
+          sum(rate(rag_requests_total{status_code="429"}[5m]))
+          /
+          clamp_min(sum(rate(rag_requests_total[5m])), 0.001)
+          > 0.20
+        for: 10m
+        labels:
+          severity: ticket
+          service: production-rag-assistant
+        annotations:
+          summary: "High API rate limit rate"
+          description: "More than 20% of API requests are being rate limited."
+
+      - alert: RAGHighHttpLatencyP95
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, path) (rate(rag_request_latency_seconds_bucket[5m]))
+          )
+          > 2
+        for: 15m
+        labels:
+          severity: ticket
+          service: production-rag-assistant
+        annotations:
+          summary: "High API p95 latency"
+          description: "API p95 latency is above 2 seconds for at least 15 minutes."
+
+      - alert: RAGProviderErrors
+        expr: |
+          sum(rate(rag_provider_errors_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: ticket
+          service: production-rag-assistant
+        annotations:
+          summary: "Provider errors detected"
+          description: "OpenAI-compatible provider calls are returning errors."
+
+      - alert: RAGHighProviderLatencyP95
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, provider, operation, model) (
+              rate(rag_provider_latency_seconds_bucket[5m])
+            )
+          )
+          > 5
+        for: 15m
+        labels:
+          severity: ticket
+          service: production-rag-assistant
+        annotations:
+          summary: "High provider p95 latency"
+          description: "Provider p95 latency is above 5 seconds."
+
+      - alert: RAGInvalidCitations
+        expr: |
+          increase(rag_citation_invalid_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: ticket
+          service: production-rag-assistant
+        annotations:
+          summary: "Invalid citations detected"
+          description: "At least one generated answer contained invalid citations."
+
+      - alert: RAGNoRetrievalRefusalsSpike
+        expr: |
+          sum(increase(rag_refusals_total{reason="no_retrieved_chunks"}[15m]))
+          > 5
+        for: 0m
+        labels:
+          severity: ticket
+          service: production-rag-assistant
+        annotations:
+          summary: "No-retrieval refusals spike"
+          description: "The assistant is frequently refusing because retrieval found no chunks."

@@ -34,6 +34,12 @@ docs/CONFIGURATION.md
 docs/DEPLOYMENT_RUNBOOK.md
 ```
 
+当前可观测性文档：
+
+```text
+docs/OBSERVABILITY.md
+```
+
 ## 1. 当前项目状态
 
 这是一个生产风格的 RAG assistant 后端项目。当前阶段已经完成了可本地运行、可 ingest、可检索、可回答、可记录日志、可评测、可 CI 回归的后端 MVP。
@@ -180,6 +186,10 @@ data/raw/
 
 .github/workflows/
   ci.yml              GitHub Actions CI
+
+monitoring/
+  grafana/            Grafana dashboard 模板
+  prometheus/         Prometheus alert rule 模板
 ```
 
 ## 4. 本地环境准备
@@ -194,6 +204,12 @@ docs/CONFIGURATION.md
 
 ```text
 docs/DEPLOYMENT_RUNBOOK.md
+```
+
+指标、dashboard 和 alert 模板见：
+
+```text
+docs/OBSERVABILITY.md
 ```
 
 ### 必需工具
@@ -671,7 +687,7 @@ uv run pytest
 当前最近一次本地通过结果：
 
 ```text
-318 passed
+323 passed
 ```
 
 ### Pipeline Smoke
@@ -958,7 +974,7 @@ Repository -> Settings -> Actions -> General
 ### 可观测性
 
 - trace/span 集成。
-- dashboard 模板。
+- dashboard 和 alert 模板已完成：`docs/OBSERVABILITY.md`、`monitoring/grafana/rag-dashboard.json`、`monitoring/prometheus/rag-alerts.yml`。
 - 慢查询监控。
 - eval 趋势记录。
 
@@ -1035,14 +1051,14 @@ OPENAI_API_KEY
 4. rate limit。已完成。
 5. 环境变量和 secrets 文档。已完成。
 6. 部署 runbook。已完成。
-7. dashboard 和 alert。
+7. dashboard 和 alert。已完成。
 
 ## 14. 当前优先级建议
 
 建议下一步优先做：
 
 ```text
-可观测性 dashboard 和 alert 模板
+trace/span 集成
 ```
 
 原因：
@@ -1055,7 +1071,7 @@ OPENAI_API_KEY
 - OpenAI provider 已有超时、有限重试和错误分类。
 - OpenAI provider 错误已可映射到 API 响应、日志和 metrics。
 - provider token 统计和 embedding/generation latency 细分已完成，可以支持基础成本估算和性能观察。
-- chat session 表、repository、基础 API、`/chat` 的 `session_id` 挂载、conversation history API、API 层 SSE streaming、底层 OpenAI Responses token streaming、最小聊天 UI、文档上传/reindex UI、backend Dockerfile、production compose、CORS、基础 rate limit、配置/secrets 文档和部署 runbook 都已完成，下一步把现有 metrics 整理成 dashboard 和 alert 模板。
+- chat session 表、repository、基础 API、`/chat` 的 `session_id` 挂载、conversation history API、API 层 SSE streaming、底层 OpenAI Responses token streaming、最小聊天 UI、文档上传/reindex UI、backend Dockerfile、production compose、CORS、基础 rate limit、配置/secrets 文档、部署 runbook、dashboard 和 alert 模板都已完成，下一步给请求、检索和 provider 调用补 trace/span 级链路观察。
 
 启用 OpenAI embedding 后可以先跑：
 
