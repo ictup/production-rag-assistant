@@ -28,6 +28,7 @@ https://github.com/ictup/Production_RAG_Assistant.git
 - 健康检查接口：`GET /health`
 - RAG 聊天接口：`POST /chat`
 - 聊天日志查询接口：`GET /chat/logs`
+- 文档列表接口：`GET /documents`
 - Prometheus 指标接口：`GET /metrics`
 - API key 鉴权：`Authorization: Bearer dev-key`
 - workspace 隔离头：`X-Workspace-ID`
@@ -310,6 +311,23 @@ curl.exe http://127.0.0.1:8000/chat/logs `
   -H "X-Workspace-ID: public"
 ```
 
+### Documents
+
+```powershell
+curl.exe "http://127.0.0.1:8000/documents?limit=20&offset=0" `
+  -H "Authorization: Bearer dev-key" `
+  -H "X-Workspace-ID: public"
+```
+
+响应会包含：
+
+- `workspace_id`
+- `total`
+- `count`
+- `limit`
+- `offset`
+- `documents`
+
 ### Metrics
 
 ```powershell
@@ -348,7 +366,7 @@ uv run pytest
 当前最近一次本地通过结果：
 
 ```text
-223 passed
+230 passed
 ```
 
 ### Pipeline Smoke
@@ -592,6 +610,8 @@ Repository -> Settings -> Actions -> General
 
 ### 产品 API
 
+- 文档列表 API 已完成：`GET /documents`。
+- 文档详情 API。
 - 文档上传 API。
 - 文档删除 API。
 - 文档重新索引 API。
@@ -699,7 +719,7 @@ OPENAI_API_KEY
 建议下一步优先做：
 
 ```text
-文档管理 API 第一步：查询文档列表
+文档管理 API 第二步：查询文档详情
 ```
 
 原因：
@@ -712,7 +732,7 @@ OPENAI_API_KEY
 - OpenAI provider 已有超时、有限重试和错误分类。
 - OpenAI provider 错误已可映射到 API 响应、日志和 metrics。
 - provider token 统计和 embedding/generation latency 细分已完成，可以支持基础成本估算和性能观察。
-- 当前 ingest、inspect、reindex 仍主要是 CLI 能力，下一步应把文档管理能力逐步开放为 API，先从只读查询列表开始，风险最低。
+- 文档列表 API 已完成，下一步继续做只读详情接口，复用相同鉴权和 workspace 隔离模型。
 
 启用 OpenAI embedding 后可以先跑：
 

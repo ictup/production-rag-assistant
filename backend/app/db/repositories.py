@@ -1,9 +1,10 @@
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.db.models import EMBEDDING_DIMENSION, ChatLog, Document, DocumentChunk
@@ -35,6 +36,27 @@ class CreateChatLogInput:
     latency_ms: int
 
 
+@dataclass(frozen=True)
+class DocumentSummary:
+    id: uuid.UUID
+    workspace_id: str
+    source_type: str
+    source_uri: str
+    title: str
+    author: str | None
+    visibility: str
+    metadata: dict[str, Any]
+    chunk_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class DocumentListResult:
+    total: int
+    documents: list[DocumentSummary]
+
+
 class DocumentRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -42,6 +64,66 @@ class DocumentRepository:
     async def get_document_id_by_hash(self, content_hash: str) -> uuid.UUID | None:
         statement = select(Document.id).where(Document.content_hash == content_hash)
         return await self.session.scalar(statement)
+
+    async def list_documents(
+        self,
+        *,
+        workspace_id: str = "public",
+        limit: int = 20,
+        offset: int = 0,
+    ) -> DocumentListResult:
+        workspace_id = workspace_id.strip() or "public"
+        if limit <= 0:
+            raise ValueError("limit must be greater than zero")
+        if offset < 0:
+            raise ValueError("offset must not be negative")
+
+        total_statement = select(func.count()).select_from(Document).where(
+            Document.workspace_id == workspace_id
+        )
+        total = await self.session.scalar(total_statement)
+
+        chunk_counts = (
+            select(
+                DocumentChunk.document_id,
+                func.count(DocumentChunk.id).label("chunk_count"),
+            )
+            .where(DocumentChunk.workspace_id == workspace_id)
+            .group_by(DocumentChunk.document_id)
+            .subquery()
+        )
+        statement = (
+            select(
+                Document,
+                func.coalesce(chunk_counts.c.chunk_count, 0).label("chunk_count"),
+            )
+            .outerjoin(chunk_counts, chunk_counts.c.document_id == Document.id)
+            .where(Document.workspace_id == workspace_id)
+            .order_by(Document.created_at.desc(), Document.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = (await self.session.execute(statement)).all()
+
+        return DocumentListResult(
+            total=int(total or 0),
+            documents=[
+                DocumentSummary(
+                    id=document.id,
+                    workspace_id=document.workspace_id,
+                    source_type=document.source_type,
+                    source_uri=document.source_uri,
+                    title=document.title,
+                    author=document.author,
+                    visibility=document.visibility,
+                    metadata=dict(document.metadata_),
+                    chunk_count=int(chunk_count or 0),
+                    created_at=document.created_at,
+                    updated_at=document.updated_at,
+                )
+                for document, chunk_count in rows
+            ],
+        )
 
     async def ingest_document(
         self,

@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -19,11 +20,14 @@ class FakeAsyncSession:
         self,
         scalar_result: uuid.UUID | None = None,
         scalars_result: list[Any] | None = None,
+        execute_result: list[Any] | None = None,
     ) -> None:
         self.scalar_result = scalar_result
         self.scalars_result = scalars_result or []
+        self.execute_result = execute_result or []
         self.scalar_statement: Any | None = None
         self.scalars_statement: Any | None = None
+        self.execute_statement: Any | None = None
         self.added: list[Any] = []
         self.added_all: list[Any] = []
         self.flushed = False
@@ -36,6 +40,10 @@ class FakeAsyncSession:
     async def scalars(self, statement: Any):
         self.scalars_statement = statement
         return FakeScalarResult(self.scalars_result)
+
+    async def execute(self, statement: Any):
+        self.execute_statement = statement
+        return FakeExecuteResult(self.execute_result)
 
     def add(self, instance: Any) -> None:
         self.added.append(instance)
@@ -58,6 +66,14 @@ class FakeScalarResult:
         return self.rows
 
 
+class FakeExecuteResult:
+    def __init__(self, rows: list[Any]) -> None:
+        self.rows = rows
+
+    def all(self) -> list[Any]:
+        return self.rows
+
+
 def make_raw_document() -> RawDocument:
     return RawDocument(
         title="FlashAttention Notes",
@@ -65,6 +81,22 @@ def make_raw_document() -> RawDocument:
         text="# FlashAttention\n\nFlashAttention reduces HBM traffic.",
         metadata={"topic": "attention"},
         author="Dao et al.",
+    )
+
+
+def make_document_model() -> Document:
+    return Document(
+        id=uuid.UUID("11111111-1111-1111-1111-111111111111"),
+        workspace_id="tenant-a",
+        source_type="markdown",
+        source_uri="data/raw/flashattention.md",
+        title="FlashAttention Notes",
+        author="Dao et al.",
+        content_hash="a" * 64,
+        visibility="public",
+        metadata_={"topic": "attention"},
+        created_at=datetime(2026, 5, 18, 8, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 5, 18, 9, 0, tzinfo=UTC),
     )
 
 
@@ -98,6 +130,49 @@ async def test_get_document_id_by_hash_queries_document_hash() -> None:
     assert result == existing_id
     assert session.scalar_statement is not None
     assert "documents.content_hash" in str(session.scalar_statement)
+
+
+@pytest.mark.asyncio
+async def test_list_documents_filters_workspace_and_returns_chunk_counts() -> None:
+    document = make_document_model()
+    session = FakeAsyncSession(
+        scalar_result=1,  # type: ignore[arg-type]
+        execute_result=[(document, 3)],
+    )
+    repository = DocumentRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.list_documents(
+        workspace_id=" tenant-a ",
+        limit=10,
+        offset=5,
+    )
+
+    assert result.total == 1
+    assert len(result.documents) == 1
+    summary = result.documents[0]
+    assert summary.id == document.id
+    assert summary.workspace_id == "tenant-a"
+    assert summary.title == "FlashAttention Notes"
+    assert summary.metadata == {"topic": "attention"}
+    assert summary.chunk_count == 3
+    assert session.scalar_statement is not None
+    assert session.execute_statement is not None
+    assert "documents.workspace_id" in str(session.scalar_statement)
+    compiled = str(session.execute_statement)
+    assert "documents.workspace_id" in compiled
+    assert "ORDER BY documents.created_at DESC" in compiled
+
+
+@pytest.mark.asyncio
+async def test_list_documents_rejects_invalid_pagination() -> None:
+    session = FakeAsyncSession()
+    repository = DocumentRepository(session)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="limit"):
+        await repository.list_documents(limit=0)
+
+    with pytest.raises(ValueError, match="offset"):
+        await repository.list_documents(offset=-1)
 
 
 @pytest.mark.asyncio

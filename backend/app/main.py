@@ -1,6 +1,11 @@
 from fastapi import FastAPI
 
-from backend.app.api import routes_chat, routes_health, routes_metrics
+from backend.app.api import (
+    routes_chat,
+    routes_documents,
+    routes_health,
+    routes_metrics,
+)
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.logging import RequestLoggingMiddleware, configure_logging
 from backend.app.core.request_id import RequestIDMiddleware
@@ -22,6 +27,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(routes_health.router)
     app.include_router(routes_chat.router)
+    app.include_router(routes_documents.router)
     app.include_router(routes_metrics.router)
     return app
 
