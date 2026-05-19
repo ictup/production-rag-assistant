@@ -1,4 +1,4 @@
-.PHONY: db-up db-down db-logs migrate ingest ingest-dry-run reindex-embeddings-dry-run reindex-embeddings inspect-ingestion inspect-chat-logs inspect-evals run-evals eval-gate embedding-smoke vector-smoke sparse-smoke hybrid-smoke rerank-smoke pipeline-smoke
+.PHONY: db-up db-down db-logs migrate ingest ingest-dry-run reindex-embeddings-dry-run reindex-embeddings inspect-ingestion inspect-chat-logs inspect-evals run-evals eval-gate embedding-smoke generator-smoke vector-smoke sparse-smoke hybrid-smoke rerank-smoke pipeline-smoke
 
 db-up:
 	docker compose up -d postgres
@@ -41,6 +41,9 @@ eval-gate:
 
 embedding-smoke:
 	uv run python -m backend.app.rag.embedding_smoke --expected-dimension 1536
+
+generator-smoke:
+	uv run python -m backend.app.rag.generator_smoke
 
 vector-smoke:
 	uv run python -m backend.app.rag.vector_smoke

@@ -26,13 +26,14 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     openai_embedding_model: str = "text-embedding-3-small"
     openai_timeout_seconds: float = 30.0
+    openai_max_output_tokens: int = 512
     reranker_provider: Literal["none"] = "none"
     rerank_top_n: int = 5
     vector_top_k: int = 20
     sparse_top_k: int = 20
     fused_top_k: int = 20
     rrf_k: int = 60
-    generator_provider: Literal["fake"] = "fake"
+    generator_provider: Literal["fake", "openai"] = "fake"
     llm_model: str = "fake-llm"
     refusal_score_threshold: float = 0.01
 

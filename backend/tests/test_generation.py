@@ -1,16 +1,21 @@
 import uuid
 
+import httpx
 import pytest
 
 from backend.app.core.config import Settings
 from backend.app.rag.citations import validate_citations
 from backend.app.rag.generation import (
     FakeGenerator,
+    GeneratedAnswer,
     Generator,
+    OpenAIGenerationError,
+    OpenAIResponsesGenerator,
     build_fake_answer,
     build_generator,
     build_relevant_context_snippet,
     extract_first_context_text,
+    extract_openai_response_text,
     extract_question,
     extract_question_terms,
     first_sentence,
@@ -18,6 +23,7 @@ from backend.app.rag.generation import (
     select_relevant_sentences,
     split_sentences,
 )
+from backend.app.rag.generator_smoke import run_generator_smoke
 from backend.app.rag.prompts import build_rag_prompt
 from backend.app.rag.retrieval_models import RetrievedChunk
 
@@ -35,6 +41,23 @@ def make_chunk(text: str) -> RetrievedChunk:
         retrieval_mode="hybrid_rrf",
         metadata={},
     )
+
+
+class RecordingGenerator:
+    provider_name = "recording"
+    model_name = "recording-model"
+
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+
+    async def generate(self, prompt: str):
+        self.prompts.append(prompt)
+        return GeneratedAnswer(
+            answer="FlashAttention reduces memory traffic. [1]",
+            model=self.model_name,
+            input_tokens=10,
+            output_tokens=5,
+        )
 
 
 @pytest.mark.asyncio
@@ -66,6 +89,92 @@ async def test_fake_generator_rejects_blank_prompt() -> None:
 
     with pytest.raises(ValueError, match="prompt"):
         await generator.generate("  ")
+
+
+@pytest.mark.asyncio
+async def test_openai_responses_generator_sends_expected_request() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.url == "https://api.openai.test/v1/responses"
+        assert request.headers["Authorization"] == "Bearer test-key"
+        payload = request.read()
+        assert b'"model":"gpt-test"' in payload
+        assert b'"max_output_tokens":123' in payload
+        assert b'"store":false' in payload
+        assert b"FlashAttention" in payload
+        return httpx.Response(
+            200,
+            json={
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": "FlashAttention reduces memory traffic. [1]",
+                            }
+                        ],
+                    }
+                ],
+                "usage": {
+                    "input_tokens": 42,
+                    "output_tokens": 7,
+                },
+            },
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)
+    ) as http_client:
+        generator = OpenAIResponsesGenerator(
+            api_key="test-key",
+            model_name="gpt-test",
+            base_url="https://api.openai.test/v1",
+            max_output_tokens=123,
+            http_client=http_client,
+        )
+
+        generated = await generator.generate(
+            "Context: FlashAttention\n\nQuestion: Why?"
+        )
+
+    assert generated.answer == "FlashAttention reduces memory traffic. [1]"
+    assert generated.model == "gpt-test"
+    assert generated.input_tokens == 42
+    assert generated.output_tokens == 7
+    assert len(requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_openai_responses_generator_rejects_http_errors() -> None:
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(429, text="rate limited")
+        )
+    ) as http_client:
+        generator = OpenAIResponsesGenerator(
+            api_key="test-key",
+            model_name="gpt-test",
+            http_client=http_client,
+        )
+
+        with pytest.raises(OpenAIGenerationError, match="status 429"):
+            await generator.generate("Context: FlashAttention\n\nQuestion: Why?")
+
+
+def test_extract_openai_response_text_prefers_output_text_property() -> None:
+    assert (
+        extract_openai_response_text({"output_text": " Direct answer. [1] "})
+        == "Direct answer. [1]"
+    )
+
+
+def test_extract_openai_response_text_rejects_missing_text() -> None:
+    with pytest.raises(OpenAIGenerationError, match="output"):
+        extract_openai_response_text({"output": []})
 
 
 def test_extract_question_reads_question_section() -> None:
@@ -176,3 +285,45 @@ def test_build_generator_uses_settings() -> None:
 
     assert isinstance(generator, Generator)
     assert generator.model_name == "test-fake-llm"
+
+
+def test_build_generator_requires_openai_api_key() -> None:
+    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+        build_generator(
+            Settings(
+                generator_provider="openai",
+                llm_model="gpt-test",
+                openai_api_key=None,
+            )
+        )
+
+
+def test_build_generator_uses_openai_settings() -> None:
+    generator = build_generator(
+        Settings(
+            generator_provider="openai",
+            llm_model="gpt-test",
+            openai_api_key="test-key",
+            openai_base_url="https://api.openai.test/v1",
+            openai_timeout_seconds=3,
+            openai_max_output_tokens=123,
+        )
+    )
+
+    assert isinstance(generator, OpenAIResponsesGenerator)
+    assert generator.model_name == "gpt-test"
+    assert generator.max_output_tokens == 123
+
+
+@pytest.mark.asyncio
+async def test_generator_smoke_uses_generator(capsys) -> None:
+    generator = RecordingGenerator()
+
+    exit_code = await run_generator_smoke(generator=generator)
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert generator.prompts
+    assert "provider: recording" in output
+    assert "model: recording-model" in output
+    assert "generator smoke passed" in output

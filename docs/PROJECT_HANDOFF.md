@@ -18,7 +18,7 @@ https://github.com/ictup/Production_RAG_Assistant.git
 
 这是一个生产风格的 RAG assistant 后端项目。当前阶段已经完成了可本地运行、可 ingest、可检索、可回答、可记录日志、可评测、可 CI 回归的后端 MVP。
 
-当前默认仍然使用 fake generator。embedding 可以在 fake 和 OpenAI 之间切换；只有把 `EMBEDDING_PROVIDER=openai` 并配置 `OPENAI_API_KEY` 后才会发真实 embedding API 请求。
+当前默认仍然使用 fake generator。embedding 和 generator 都可以在 fake 和 OpenAI 之间切换；只有把对应 provider 改为 `openai` 并配置 `OPENAI_API_KEY` 后才会发真实 OpenAI API 请求。
 
 ## 2. 已完成的主要工作
 
@@ -71,6 +71,8 @@ https://github.com/ictup/Production_RAG_Assistant.git
 - no-op reranker
 - prompt 构造
 - fake generator
+- OpenAI Responses API generator
+- generator provider smoke CLI
 - citation 构建和校验
 - retrieval-confidence refusal
 - question-level refusal guard
@@ -192,10 +194,18 @@ EMBEDDING_PROVIDER=openai
 OPENAI_API_KEY=sk-...
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_MAX_OUTPUT_TOKENS=512
 EMBEDDING_DIMENSION=1536
 ```
 
 `text-embedding-3-small` 默认 1536 维，和当前 pgvector schema 匹配。
+
+如果要启用 OpenAI generator，可以继续设置：
+
+```text
+GENERATOR_PROVIDER=openai
+LLM_MODEL=gpt-5.4-nano
+```
 
 ## 5. 本地启动流程
 
@@ -305,7 +315,7 @@ uv run pytest
 当前最近一次本地通过结果：
 
 ```text
-199 passed
+206 passed
 ```
 
 ### Pipeline Smoke
@@ -357,6 +367,20 @@ uv run python -m evals.run --format summary --no-output
 uv run python -m backend.app.rag.embedding_smoke --expected-dimension 1536
 ```
 
+### Generator Provider Smoke
+
+默认使用 `.env` 中的 `GENERATOR_PROVIDER` 和 `LLM_MODEL`：
+
+```powershell
+uv run python -m backend.app.rag.generator_smoke
+```
+
+也可以只对本次 smoke 临时覆盖 provider 和 model，不修改 `.env`：
+
+```powershell
+uv run python -m backend.app.rag.generator_smoke --provider openai --model gpt-5.4-nano
+```
+
 ### 重建已有 Chunk Embedding
 
 如果数据库中已有 chunk 是用 fake provider 写入的，切换到 OpenAI embedding 后必须重建 chunk embedding，否则 query embedding 和库内 embedding 不在同一向量空间，vector retrieval 质量会不可靠。
@@ -397,6 +421,7 @@ make inspect-evals      检查 eval 数据集格式
 make run-evals          运行 eval summary
 make eval-gate          eval 失败时返回非零退出码
 make embedding-smoke    验证当前 embedding provider 能返回正确维度
+make generator-smoke    验证当前 generator provider 能返回非空答案
 make pipeline-smoke     端到端 pipeline smoke
 ```
 
@@ -502,9 +527,9 @@ Repository -> Settings -> Actions -> General
 ### 模型与 provider
 
 - OpenAI embedding provider 已有代码、mock 测试和联网 smoke CLI。
-- 真实 LLM generator，例如 OpenAI chat/completions。
+- OpenAI generator provider 已有代码和 smoke CLI。
 - provider 超时、重试、错误分类。
-- provider API key 配置校验目前只覆盖 OpenAI embedding。
+- provider API key 配置校验目前覆盖 OpenAI embedding 和 OpenAI generator。
 - provider usage/token/cost 统计。
 
 ### 检索质量
@@ -570,9 +595,9 @@ Repository -> Settings -> Actions -> General
 
 1. 用真实 `OPENAI_API_KEY` 跑一轮 OpenAI embedding smoke。
 2. 对已有 chunk 执行 embedding reindex，确保库内向量和 query 向量来自同一 provider。
-3. 增加 OpenAI generator provider。
+3. 用 OpenAI generator 跑一轮 pipeline smoke 和 eval。
 4. 增加 provider 超时、重试和错误分类测试。
-5. 用真实 key 跑一轮 ingest 和 eval。
+5. 增加 provider usage/token/cost 统计。
 
 需要你提供：
 
@@ -630,7 +655,7 @@ OPENAI_API_KEY
 
 - OpenAI embedding provider 已经过真实 smoke 验证。
 - 如果旧 chunk 仍然是 fake embedding，vector retrieval 会混用两个向量空间。
-- 完成 reindex 后，再接 OpenAI generator 会更稳。
+- 完成 reindex 后，可以切换 OpenAI generator 验证真实回答质量。
 
 启用 OpenAI embedding 后可以先跑：
 
@@ -644,10 +669,10 @@ uv run python -m backend.app.rag.embedding_smoke --expected-dimension 1536
 uv run python -m backend.app.rag.reindex_embeddings --workspace-id public --write
 ```
 
-之后再做：
+之后验证 generator：
 
-```text
-接入真实 LLM generator
+```powershell
+uv run python -m backend.app.rag.generator_smoke --provider openai --model gpt-5.4-nano
 ```
 
 这样项目就会从“本地教学型 RAG”进入“真实模型驱动 RAG”的阶段。
