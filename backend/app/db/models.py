@@ -156,6 +156,50 @@ document_chunks_workspace_idx = Index(
 )
 
 
+class ChatSession(Base):
+    __tablename__ = "chat_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="public",
+        server_default=sql_text("'public'"),
+    )
+    title: Mapped[str | None] = mapped_column(Text)
+    metadata_: Mapped[dict[str, Any]] = mapped_column(
+        "metadata",
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=sql_text("'{}'::jsonb"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=sql_text("now()"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=sql_text("now()"),
+        onupdate=sql_text("now()"),
+    )
+
+    chat_logs: Mapped[list["ChatLog"]] = relationship(back_populates="session")
+
+
+chat_sessions_workspace_updated_at_idx = Index(
+    "chat_sessions_workspace_updated_at_idx",
+    ChatSession.workspace_id,
+    ChatSession.updated_at,
+)
+
+
 class ChatLog(Base):
     __tablename__ = "chat_logs"
     __table_args__ = (
@@ -173,6 +217,10 @@ class ChatLog(Base):
         nullable=False,
         default="public",
         server_default=sql_text("'public'"),
+    )
+    session_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("chat_sessions.id", ondelete="SET NULL"),
     )
     question: Mapped[str] = mapped_column(Text, nullable=False)
     answer: Mapped[str] = mapped_column(Text, nullable=False)
@@ -203,9 +251,16 @@ class ChatLog(Base):
         server_default=sql_text("now()"),
     )
 
+    session: Mapped[ChatSession | None] = relationship(back_populates="chat_logs")
+
 
 chat_logs_workspace_created_at_idx = Index(
     "chat_logs_workspace_created_at_idx",
     ChatLog.workspace_id,
+    ChatLog.created_at,
+)
+chat_logs_session_created_at_idx = Index(
+    "chat_logs_session_created_at_idx",
+    ChatLog.session_id,
     ChatLog.created_at,
 )

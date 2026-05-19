@@ -48,7 +48,8 @@ https://github.com/ictup/Production_RAG_Assistant.git
   - `0001_enable_pgvector.py`
   - `0002_create_document_tables.py`
   - `0003_create_chat_logs.py`
-- 文档表、chunk 表、chat log 表
+  - `0004_create_chat_sessions.py`
+- 文档表、chunk 表、chat session 表、chat log 表
 - async SQLAlchemy session
 - repository 层封装文档 ingest 和聊天日志写入/查询
 
@@ -448,7 +449,7 @@ uv run pytest
 当前最近一次本地通过结果：
 
 ```text
-252 passed
+255 passed
 ```
 
 ### Pipeline Smoke
@@ -698,8 +699,9 @@ Repository -> Settings -> Actions -> General
 - 文档上传 API 已完成：`POST /documents`。
 - 文档重新索引 API 已完成：`POST /documents/reindex`。
 - 当前已有 CLI 和 API 两种 chunk embedding reindex 入口。
+- chat session 表和 `chat_logs.session_id` 迁移已完成。
 - workspace 管理 API。
-- chat session / conversation API。
+- chat session / conversation API 还没有 route 和 repository。
 - streaming chat API。
 
 ### 前端与体验
@@ -779,10 +781,11 @@ OPENAI_API_KEY
 建议步骤：
 
 1. chat session 表。
-2. conversation history。
-3. streaming response。
-4. 简单前端聊天 UI。
-5. 文档上传 UI。
+2. chat session repository 和基础 API。
+3. conversation history。
+4. streaming response。
+5. 简单前端聊天 UI。
+6. 文档上传 UI。
 
 ### 阶段 E：生产化
 
@@ -802,7 +805,7 @@ OPENAI_API_KEY
 建议下一步优先做：
 
 ```text
-chat session / conversation API 第一步：会话表和迁移
+chat session / conversation API 第二步：会话 repository 和基础 API
 ```
 
 原因：
@@ -815,7 +818,7 @@ chat session / conversation API 第一步：会话表和迁移
 - OpenAI provider 已有超时、有限重试和错误分类。
 - OpenAI provider 错误已可映射到 API 响应、日志和 metrics。
 - provider token 统计和 embedding/generation latency 细分已完成，可以支持基础成本估算和性能观察。
-- 文档管理 API 的上传、列表、详情、删除和 reindex 已完成，下一阶段开始补 chat session / conversation 能力。
+- chat session 表和 `chat_logs.session_id` 已完成，下一步补会话 repository 和基础 API。
 
 启用 OpenAI embedding 后可以先跑：
 
