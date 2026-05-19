@@ -7,7 +7,13 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.db.models import EMBEDDING_DIMENSION, ChatLog, Document, DocumentChunk
+from backend.app.db.models import (
+    EMBEDDING_DIMENSION,
+    ChatLog,
+    ChatSession,
+    Document,
+    DocumentChunk,
+)
 from backend.app.rag.embeddings import validate_embedding_batch
 from ingestion.hashing import compute_content_hash
 from ingestion.models import Chunk, RawDocument
@@ -34,6 +40,19 @@ class CreateChatLogInput:
     refusal: dict[str, Any] | None
     citation_valid: bool | None
     latency_ms: int
+
+
+@dataclass(frozen=True)
+class CreateChatSessionInput:
+    workspace_id: str = "public"
+    title: str | None = None
+    metadata: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class ChatSessionListResult:
+    total: int
+    sessions: list[ChatSession]
 
 
 @dataclass(frozen=True)
@@ -377,3 +396,79 @@ class ChatLogRepository:
             .limit(limit)
         )
         return list((await self.session.scalars(statement)).all())
+
+
+class ChatSessionRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def create_session(
+        self,
+        session_input: CreateChatSessionInput,
+        *,
+        commit: bool = False,
+    ) -> ChatSession:
+        workspace_id = session_input.workspace_id.strip() or "public"
+        title = (
+            session_input.title.strip()
+            if session_input.title is not None
+            else None
+        )
+        if title == "":
+            title = None
+
+        chat_session = ChatSession(
+            id=uuid.uuid4(),
+            workspace_id=workspace_id,
+            title=title,
+            metadata_=dict(session_input.metadata or {}),
+        )
+        self.session.add(chat_session)
+        await self.session.flush()
+        if commit:
+            await self.session.commit()
+        return chat_session
+
+    async def list_sessions(
+        self,
+        *,
+        workspace_id: str = "public",
+        limit: int = 20,
+        offset: int = 0,
+    ) -> ChatSessionListResult:
+        workspace_id = workspace_id.strip() or "public"
+        if limit <= 0:
+            raise ValueError("limit must be greater than zero")
+        if offset < 0:
+            raise ValueError("offset must not be negative")
+
+        total_statement = select(func.count()).select_from(ChatSession).where(
+            ChatSession.workspace_id == workspace_id
+        )
+        total = await self.session.scalar(total_statement)
+        statement = (
+            select(ChatSession)
+            .where(ChatSession.workspace_id == workspace_id)
+            .order_by(
+                ChatSession.updated_at.desc(),
+                ChatSession.created_at.desc(),
+                ChatSession.id.desc(),
+            )
+            .limit(limit)
+            .offset(offset)
+        )
+        sessions = list((await self.session.scalars(statement)).all())
+        return ChatSessionListResult(total=int(total or 0), sessions=sessions)
+
+    async def get_session(
+        self,
+        *,
+        session_id: uuid.UUID,
+        workspace_id: str = "public",
+    ) -> ChatSession | None:
+        workspace_id = workspace_id.strip() or "public"
+        statement = select(ChatSession).where(
+            ChatSession.id == session_id,
+            ChatSession.workspace_id == workspace_id,
+        )
+        return await self.session.scalar(statement)

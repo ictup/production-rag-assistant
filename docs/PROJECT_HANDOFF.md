@@ -28,6 +28,9 @@ https://github.com/ictup/Production_RAG_Assistant.git
 - 健康检查接口：`GET /health`
 - RAG 聊天接口：`POST /chat`
 - 聊天日志查询接口：`GET /chat/logs`
+- chat session 创建接口：`POST /chat/sessions`
+- chat session 列表接口：`GET /chat/sessions`
+- chat session 详情接口：`GET /chat/sessions/{session_id}`
 - 文档上传接口：`POST /documents`
 - 文档列表接口：`GET /documents`
 - 文档详情接口：`GET /documents/{document_id}`
@@ -316,6 +319,34 @@ curl.exe http://127.0.0.1:8000/chat/logs `
   -H "X-Workspace-ID: public"
 ```
 
+### Chat Sessions
+
+创建会话：
+
+```powershell
+curl.exe -X POST http://127.0.0.1:8000/chat/sessions `
+  -H "Authorization: Bearer dev-key" `
+  -H "Content-Type: application/json" `
+  -H "X-Workspace-ID: public" `
+  -d "{\"title\":\"GPU systems questions\",\"metadata\":{\"topic\":\"systems\"}}"
+```
+
+查询会话列表：
+
+```powershell
+curl.exe "http://127.0.0.1:8000/chat/sessions?limit=20&offset=0" `
+  -H "Authorization: Bearer dev-key" `
+  -H "X-Workspace-ID: public"
+```
+
+查询会话详情：
+
+```powershell
+curl.exe http://127.0.0.1:8000/chat/sessions/<session_id> `
+  -H "Authorization: Bearer dev-key" `
+  -H "X-Workspace-ID: public"
+```
+
 ### Documents
 
 上传 Markdown 文档：
@@ -449,7 +480,7 @@ uv run pytest
 当前最近一次本地通过结果：
 
 ```text
-255 passed
+269 passed
 ```
 
 ### Pipeline Smoke
@@ -700,8 +731,9 @@ Repository -> Settings -> Actions -> General
 - 文档重新索引 API 已完成：`POST /documents/reindex`。
 - 当前已有 CLI 和 API 两种 chunk embedding reindex 入口。
 - chat session 表和 `chat_logs.session_id` 迁移已完成。
+- chat session repository 和基础 API 已完成：`POST /chat/sessions`、`GET /chat/sessions`、`GET /chat/sessions/{session_id}`。
 - workspace 管理 API。
-- chat session / conversation API 还没有 route 和 repository。
+- `/chat` 还没有挂载 session，也还没有 conversation history API。
 - streaming chat API。
 
 ### 前端与体验
@@ -805,7 +837,7 @@ OPENAI_API_KEY
 建议下一步优先做：
 
 ```text
-chat session / conversation API 第二步：会话 repository 和基础 API
+chat session / conversation API 第三步：把 /chat 请求挂到 session
 ```
 
 原因：
@@ -818,7 +850,7 @@ chat session / conversation API 第二步：会话 repository 和基础 API
 - OpenAI provider 已有超时、有限重试和错误分类。
 - OpenAI provider 错误已可映射到 API 响应、日志和 metrics。
 - provider token 统计和 embedding/generation latency 细分已完成，可以支持基础成本估算和性能观察。
-- chat session 表和 `chat_logs.session_id` 已完成，下一步补会话 repository 和基础 API。
+- chat session 表、repository 和基础 API 已完成，下一步让 `/chat` 支持 `session_id` 并把 chat log 挂到会话。
 
 启用 OpenAI embedding 后可以先跑：
 

@@ -4,10 +4,12 @@ from typing import Any
 
 import pytest
 
-from backend.app.db.models import ChatLog, Document, DocumentChunk
+from backend.app.db.models import ChatLog, ChatSession, Document, DocumentChunk
 from backend.app.db.repositories import (
     ChatLogRepository,
+    ChatSessionRepository,
     CreateChatLogInput,
+    CreateChatSessionInput,
     DocumentRepository,
 )
 from ingestion.chunking import chunk_document
@@ -141,6 +143,17 @@ def make_chat_log_input() -> CreateChatLogInput:
         refusal=None,
         citation_valid=True,
         latency_ms=12,
+    )
+
+
+def make_chat_session_model() -> ChatSession:
+    return ChatSession(
+        id=uuid.UUID("33333333-3333-3333-3333-333333333333"),
+        workspace_id="tenant-a",
+        title="GPU systems questions",
+        metadata_={"topic": "systems"},
+        created_at=datetime(2026, 5, 18, 8, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 5, 18, 9, 0, tzinfo=UTC),
     )
 
 
@@ -507,3 +520,91 @@ async def test_list_recent_chat_logs_rejects_invalid_limit() -> None:
 
     with pytest.raises(ValueError, match="limit"):
         await repository.list_recent_chat_logs(limit=0)
+
+
+@pytest.mark.asyncio
+async def test_create_chat_session_adds_session_model() -> None:
+    session = FakeAsyncSession()
+    repository = ChatSessionRepository(session)  # type: ignore[arg-type]
+
+    chat_session = await repository.create_session(
+        CreateChatSessionInput(
+            workspace_id=" tenant-a ",
+            title=" GPU systems questions ",
+            metadata={"topic": "systems"},
+        )
+    )
+
+    assert isinstance(chat_session, ChatSession)
+    assert chat_session.workspace_id == "tenant-a"
+    assert chat_session.title == "GPU systems questions"
+    assert chat_session.metadata_ == {"topic": "systems"}
+    assert session.added == [chat_session]
+    assert session.flushed is True
+    assert session.committed is False
+
+
+@pytest.mark.asyncio
+async def test_create_chat_session_can_commit_transaction() -> None:
+    session = FakeAsyncSession()
+    repository = ChatSessionRepository(session)  # type: ignore[arg-type]
+
+    await repository.create_session(CreateChatSessionInput(), commit=True)
+
+    assert session.flushed is True
+    assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_list_chat_sessions_filters_workspace_and_paginates() -> None:
+    chat_session = make_chat_session_model()
+    session = FakeAsyncSession(
+        scalar_result=1,
+        scalars_result=[chat_session],
+    )
+    repository = ChatSessionRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.list_sessions(
+        workspace_id=" tenant-a ",
+        limit=10,
+        offset=5,
+    )
+
+    assert result.total == 1
+    assert result.sessions == [chat_session]
+    assert session.scalar_statement is not None
+    assert session.scalars_statement is not None
+    assert "chat_sessions.workspace_id" in str(session.scalar_statement)
+    compiled = str(session.scalars_statement)
+    assert "chat_sessions.workspace_id" in compiled
+    assert "ORDER BY chat_sessions.updated_at DESC" in compiled
+
+
+@pytest.mark.asyncio
+async def test_list_chat_sessions_rejects_invalid_pagination() -> None:
+    session = FakeAsyncSession()
+    repository = ChatSessionRepository(session)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="limit"):
+        await repository.list_sessions(limit=0)
+
+    with pytest.raises(ValueError, match="offset"):
+        await repository.list_sessions(offset=-1)
+
+
+@pytest.mark.asyncio
+async def test_get_chat_session_filters_workspace_and_id() -> None:
+    chat_session = make_chat_session_model()
+    session = FakeAsyncSession(scalar_result=chat_session)
+    repository = ChatSessionRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.get_session(
+        session_id=chat_session.id,
+        workspace_id=" tenant-a ",
+    )
+
+    assert result == chat_session
+    assert session.scalar_statement is not None
+    compiled = str(session.scalar_statement)
+    assert "chat_sessions.id" in compiled
+    assert "chat_sessions.workspace_id" in compiled
