@@ -27,6 +27,7 @@ https://github.com/ictup/Production_RAG_Assistant.git
 - FastAPI 应用入口：`backend/app/main.py`
 - 健康检查接口：`GET /health`
 - RAG 聊天接口：`POST /chat`，支持可选 `session_id`
+- RAG 流式聊天接口：`POST /chat/stream`
 - 聊天日志查询接口：`GET /chat/logs`
 - chat session 创建接口：`POST /chat/sessions`
 - chat session 列表接口：`GET /chat/sessions`
@@ -311,6 +312,25 @@ curl.exe -X POST http://127.0.0.1:8000/chat `
 
 如果 `session_id` 不存在，或者不属于当前 `X-Workspace-ID`，接口会返回 `404`，并且不会调用 RAG pipeline，也不会写入 chat log。
 
+### Streaming Chat
+
+```powershell
+curl.exe -N -X POST http://127.0.0.1:8000/chat/stream `
+  -H "Authorization: Bearer dev-key" `
+  -H "Content-Type: application/json" `
+  -H "X-Workspace-ID: public" `
+  -d "{\"question\":\"What problem does FlashAttention solve?\",\"session_id\":\"<session_id>\"}"
+```
+
+当前 `POST /chat/stream` 是 SSE 兼容接口，事件顺序为：
+
+- `metadata`
+- `answer_delta`
+- `final`
+- `done`
+
+它复用 `/chat` 的鉴权、workspace、session 校验、日志写入、metrics 和 provider 错误映射。当前版本先在 API 层把完整回答切块输出；底层 OpenAI Responses 真 token streaming 还未接入 generator。
+
 如果 OpenAI provider 失败，响应会包含结构化错误：
 
 ```json
@@ -512,7 +532,7 @@ uv run pytest
 当前最近一次本地通过结果：
 
 ```text
-277 passed
+279 passed
 ```
 
 ### Pipeline Smoke
@@ -767,7 +787,8 @@ Repository -> Settings -> Actions -> General
 - workspace 管理 API。
 - `/chat` 已支持可选 `session_id`，并会把 chat log 挂到对应会话。
 - conversation history API 已完成：`GET /chat/sessions/{session_id}/logs`。
-- streaming chat API。
+- streaming chat API 第一版已完成：`POST /chat/stream`，当前为 SSE 兼容分块输出。
+- 底层 OpenAI Responses 真 token streaming。
 
 ### 前端与体验
 
@@ -850,8 +871,9 @@ OPENAI_API_KEY
 3. `/chat` 挂载 session。
 4. conversation history。
 5. streaming response。
-6. 简单前端聊天 UI。
-7. 文档上传 UI。
+6. 底层 OpenAI Responses 真 token streaming。
+7. 简单前端聊天 UI。
+8. 文档上传 UI。
 
 ### 阶段 E：生产化
 
@@ -871,7 +893,7 @@ OPENAI_API_KEY
 建议下一步优先做：
 
 ```text
-chat API 第五步：streaming response
+OpenAI generator streaming：接入真实 token stream
 ```
 
 原因：
@@ -884,7 +906,7 @@ chat API 第五步：streaming response
 - OpenAI provider 已有超时、有限重试和错误分类。
 - OpenAI provider 错误已可映射到 API 响应、日志和 metrics。
 - provider token 统计和 embedding/generation latency 细分已完成，可以支持基础成本估算和性能观察。
-- chat session 表、repository、基础 API、`/chat` 的 `session_id` 挂载和 conversation history API 都已完成，下一步补 streaming response。
+- chat session 表、repository、基础 API、`/chat` 的 `session_id` 挂载、conversation history API 和 API 层 SSE streaming 都已完成，下一步把 OpenAI Responses 的真实 token stream 接入 generator。
 
 启用 OpenAI embedding 后可以先跑：
 

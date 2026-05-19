@@ -1,8 +1,11 @@
 import logging
 import uuid
+from collections.abc import AsyncIterator
+from json import dumps as json_dumps
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.security import require_api_key
@@ -21,6 +24,8 @@ from backend.app.schemas.chat import ChatLogsResponse, ChatRequest, ChatResponse
 
 router = APIRouter(tags=["chat"])
 PROVIDER_LOGGER_NAME = "backend.provider"
+CHAT_STREAM_MEDIA_TYPE = "text/event-stream"
+CHAT_STREAM_CHUNK_SIZE = 80
 PROVIDER_ERROR_STATUS_BY_CATEGORY = {
     "authentication": 502,
     "permission": 502,
@@ -180,22 +185,15 @@ def observe_chat_provider_usage(response: ChatPipelineResponse) -> None:
         )
 
 
-@router.post("/chat", response_model=ChatResponse)
-async def chat(
+async def run_chat_request(
+    *,
     http_request: Request,
     request: ChatRequest,
-    _api_key: Annotated[str, Depends(require_api_key)],
-    pipeline: Annotated[RagPipeline, Depends(get_rag_pipeline)],
-    chat_log_repository: Annotated[
-        ChatLogRepository,
-        Depends(get_chat_log_repository),
-    ],
-    chat_session_repository: Annotated[
-        ChatSessionRepository,
-        Depends(get_chat_session_repository),
-    ],
-    workspace_id: Annotated[str | None, Header(alias="X-Workspace-ID")] = None,
-) -> ChatResponse:
+    pipeline: RagPipeline,
+    chat_log_repository: ChatLogRepository,
+    chat_session_repository: ChatSessionRepository,
+    workspace_id: str | None,
+) -> tuple[str, uuid.UUID | None, ChatPipelineResponse]:
     request_id = get_request_id(http_request)
     normalized_workspace_id = normalize_workspace_id(workspace_id)
     session_id = await resolve_chat_session_id(
@@ -240,10 +238,122 @@ async def chat(
         ),
         commit=True,
     )
+    return request_id, session_id, response
+
+
+def build_sse_event(*, event: str, data: dict[str, object]) -> str:
+    payload = json_dumps(data, ensure_ascii=False, separators=(",", ":"))
+    return f"event: {event}\ndata: {payload}\n\n"
+
+
+def split_answer_for_stream(answer: str) -> list[str]:
+    if not answer:
+        return []
+    return [
+        answer[index : index + CHAT_STREAM_CHUNK_SIZE]
+        for index in range(0, len(answer), CHAT_STREAM_CHUNK_SIZE)
+    ]
+
+
+async def iter_chat_stream(
+    *,
+    response: ChatResponse,
+) -> AsyncIterator[str]:
+    yield build_sse_event(
+        event="metadata",
+        data={
+            "request_id": response.request_id,
+            "session_id": response.session_id,
+            "citation_valid": response.citation_valid,
+        },
+    )
+    for index, delta in enumerate(split_answer_for_stream(response.answer)):
+        yield build_sse_event(
+            event="answer_delta",
+            data={
+                "index": index,
+                "delta": delta,
+            },
+        )
+    yield build_sse_event(
+        event="final",
+        data=response.model_dump(mode="json"),
+    )
+    yield build_sse_event(
+        event="done",
+        data={
+            "request_id": response.request_id,
+        },
+    )
+
+
+@router.post("/chat", response_model=ChatResponse)
+async def chat(
+    http_request: Request,
+    request: ChatRequest,
+    _api_key: Annotated[str, Depends(require_api_key)],
+    pipeline: Annotated[RagPipeline, Depends(get_rag_pipeline)],
+    chat_log_repository: Annotated[
+        ChatLogRepository,
+        Depends(get_chat_log_repository),
+    ],
+    chat_session_repository: Annotated[
+        ChatSessionRepository,
+        Depends(get_chat_session_repository),
+    ],
+    workspace_id: Annotated[str | None, Header(alias="X-Workspace-ID")] = None,
+) -> ChatResponse:
+    request_id, session_id, response = await run_chat_request(
+        http_request=http_request,
+        request=request,
+        pipeline=pipeline,
+        chat_log_repository=chat_log_repository,
+        chat_session_repository=chat_session_repository,
+        workspace_id=workspace_id,
+    )
     return ChatResponse.from_pipeline_response(
         response,
         request_id=request_id,
         session_id=session_id,
+    )
+
+
+@router.post("/chat/stream")
+async def chat_stream(
+    http_request: Request,
+    request: ChatRequest,
+    _api_key: Annotated[str, Depends(require_api_key)],
+    pipeline: Annotated[RagPipeline, Depends(get_rag_pipeline)],
+    chat_log_repository: Annotated[
+        ChatLogRepository,
+        Depends(get_chat_log_repository),
+    ],
+    chat_session_repository: Annotated[
+        ChatSessionRepository,
+        Depends(get_chat_session_repository),
+    ],
+    workspace_id: Annotated[str | None, Header(alias="X-Workspace-ID")] = None,
+) -> StreamingResponse:
+    request_id, session_id, pipeline_response = await run_chat_request(
+        http_request=http_request,
+        request=request,
+        pipeline=pipeline,
+        chat_log_repository=chat_log_repository,
+        chat_session_repository=chat_session_repository,
+        workspace_id=workspace_id,
+    )
+    response = ChatResponse.from_pipeline_response(
+        pipeline_response,
+        request_id=request_id,
+        session_id=session_id,
+    )
+    return StreamingResponse(
+        iter_chat_stream(response=response),
+        media_type=CHAT_STREAM_MEDIA_TYPE,
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

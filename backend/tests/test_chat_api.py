@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import UTC, datetime
 
@@ -198,6 +199,21 @@ def build_client(
     return TestClient(app)
 
 
+def parse_sse_events(stream_text: str) -> list[tuple[str, dict]]:
+    events: list[tuple[str, dict]] = []
+    for block in stream_text.strip().split("\n\n"):
+        event_name: str | None = None
+        event_data: dict | None = None
+        for line in block.splitlines():
+            if line.startswith("event: "):
+                event_name = line.removeprefix("event: ")
+            if line.startswith("data: "):
+                event_data = json.loads(line.removeprefix("data: "))
+        if event_name is not None and event_data is not None:
+            events.append((event_name, event_data))
+    return events
+
+
 def test_chat_route_returns_answer_sources_and_metadata() -> None:
     fake_pipeline = FakePipeline()
     fake_chat_log_repository = FakeChatLogRepository()
@@ -300,6 +316,79 @@ def test_chat_route_rejects_missing_session_before_pipeline_call() -> None:
 
     response = client.post(
         "/chat",
+        headers={
+            **AUTH_HEADERS,
+            "X-Workspace-ID": "tenant-a",
+        },
+        json={
+            "question": "What problem does FlashAttention solve?",
+            "session_id": str(session_id),
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "chat session not found"}
+    assert fake_chat_session_repository.get_calls == [(session_id, "tenant-a")]
+    assert fake_pipeline.requests == []
+    assert fake_chat_log_repository.inputs == []
+
+
+def test_chat_stream_route_returns_sse_events_and_logs_chat() -> None:
+    chat_session = make_chat_session_model()
+    fake_pipeline = FakePipeline()
+    fake_chat_log_repository = FakeChatLogRepository()
+    fake_chat_session_repository = FakeChatSessionRepository(sessions=[chat_session])
+    client = build_client(
+        fake_pipeline,
+        fake_chat_log_repository,
+        fake_chat_session_repository,
+    )
+
+    response = client.post(
+        "/chat/stream",
+        headers={
+            **AUTH_HEADERS,
+            "X-Workspace-ID": "  tenant-a  ",
+        },
+        json={
+            "question": "What problem does FlashAttention solve?",
+            "session_id": str(chat_session.id),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = parse_sse_events(response.text)
+    assert [event_name for event_name, _ in events] == [
+        "metadata",
+        "answer_delta",
+        "final",
+        "done",
+    ]
+    metadata = events[0][1]
+    final = events[2][1]
+    assert metadata["request_id"] == response.headers["X-Request-ID"]
+    assert metadata["session_id"] == str(chat_session.id)
+    assert final["session_id"] == str(chat_session.id)
+    assert final["request_id"] == response.headers["X-Request-ID"]
+    assert final["answer"] == events[1][1]["delta"]
+    assert fake_chat_log_repository.commit_flags == [True]
+    assert fake_chat_log_repository.inputs[0].session_id == chat_session.id
+
+
+def test_chat_stream_route_rejects_missing_session_before_pipeline_call() -> None:
+    session_id = uuid.UUID("33333333-3333-3333-3333-333333333333")
+    fake_pipeline = FakePipeline()
+    fake_chat_log_repository = FakeChatLogRepository()
+    fake_chat_session_repository = FakeChatSessionRepository()
+    client = build_client(
+        fake_pipeline,
+        fake_chat_log_repository,
+        fake_chat_session_repository,
+    )
+
+    response = client.post(
+        "/chat/stream",
         headers={
             **AUTH_HEADERS,
             "X-Workspace-ID": "tenant-a",
@@ -545,6 +634,7 @@ def test_openapi_exposes_chat_route() -> None:
 
     assert response.status_code == 200
     assert "/chat" in response.json()["paths"]
+    assert "/chat/stream" in response.json()["paths"]
 
 
 def test_chat_logs_route_returns_recent_logs_for_workspace() -> None:
