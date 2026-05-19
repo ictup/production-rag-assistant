@@ -24,8 +24,10 @@ class FakeDocumentRepository:
     ) -> None:
         self.result = result or DocumentListResult(total=0, documents=[])
         self.detail_result = detail_result
+        self.delete_result = False
         self.list_calls: list[tuple[str, int, int]] = []
         self.detail_calls: list[tuple[uuid.UUID, str]] = []
+        self.delete_calls: list[tuple[uuid.UUID, str, bool]] = []
 
     async def list_documents(
         self,
@@ -45,6 +47,16 @@ class FakeDocumentRepository:
     ) -> DocumentDetailResult | None:
         self.detail_calls.append((document_id, workspace_id))
         return self.detail_result
+
+    async def delete_document(
+        self,
+        *,
+        document_id: uuid.UUID,
+        workspace_id: str = "public",
+        commit: bool = False,
+    ) -> bool:
+        self.delete_calls.append((document_id, workspace_id, commit))
+        return self.delete_result
 
 
 def make_document_summary() -> DocumentSummary:
@@ -240,6 +252,69 @@ def test_document_detail_route_requires_api_key() -> None:
     assert response.status_code == 401
     assert response.json() == {"detail": "missing api key"}
     assert fake_repository.detail_calls == []
+
+
+def test_delete_document_route_deletes_document_for_workspace() -> None:
+    document_id = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    fake_repository = FakeDocumentRepository()
+    fake_repository.delete_result = True
+    client = build_client(fake_repository)
+
+    response = client.delete(
+        f"/documents/{document_id}",
+        headers={
+            **AUTH_HEADERS,
+            "X-Workspace-ID": "  tenant-a  ",
+        },
+    )
+
+    assert response.status_code == 200
+    assert fake_repository.delete_calls == [(document_id, "tenant-a", True)]
+    assert response.json() == {
+        "workspace_id": "tenant-a",
+        "document_id": str(document_id),
+        "deleted": True,
+    }
+
+
+def test_delete_document_route_returns_404_for_missing_document() -> None:
+    document_id = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    fake_repository = FakeDocumentRepository()
+    client = build_client(fake_repository)
+
+    response = client.delete(
+        f"/documents/{document_id}",
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "document not found"}
+    assert fake_repository.delete_calls == [(document_id, "public", True)]
+
+
+def test_delete_document_route_rejects_invalid_uuid() -> None:
+    fake_repository = FakeDocumentRepository()
+    client = build_client(fake_repository)
+
+    response = client.delete(
+        "/documents/not-a-uuid",
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert fake_repository.delete_calls == []
+
+
+def test_delete_document_route_requires_api_key() -> None:
+    fake_repository = FakeDocumentRepository()
+    fake_repository.delete_result = True
+    client = build_client(fake_repository)
+
+    response = client.delete("/documents/11111111-1111-1111-1111-111111111111")
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "missing api key"}
+    assert fake_repository.delete_calls == []
 
 
 def test_openapi_exposes_documents_route() -> None:

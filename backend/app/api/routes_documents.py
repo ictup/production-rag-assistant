@@ -7,7 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.api.security import require_api_key
 from backend.app.db.repositories import DocumentRepository
 from backend.app.db.session import get_db_session
-from backend.app.schemas.documents import DocumentDetailResponse, DocumentsResponse
+from backend.app.schemas.documents import (
+    DeleteDocumentResponse,
+    DocumentDetailResponse,
+    DocumentsResponse,
+)
 
 router = APIRouter(tags=["documents"])
 
@@ -68,4 +72,29 @@ async def get_document_detail(
     return DocumentDetailResponse.from_result(
         workspace_id=normalized_workspace_id,
         result=result,
+    )
+
+
+@router.delete("/documents/{document_id}", response_model=DeleteDocumentResponse)
+async def delete_document(
+    document_id: uuid.UUID,
+    _api_key: Annotated[str, Depends(require_api_key)],
+    repository: Annotated[DocumentRepository, Depends(get_document_repository)],
+    workspace_id: Annotated[str | None, Header(alias="X-Workspace-ID")] = None,
+) -> DeleteDocumentResponse:
+    normalized_workspace_id = normalize_workspace_id(workspace_id)
+    deleted = await repository.delete_document(
+        document_id=document_id,
+        workspace_id=normalized_workspace_id,
+        commit=True,
+    )
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="document not found",
+        )
+    return DeleteDocumentResponse(
+        workspace_id=normalized_workspace_id,
+        document_id=str(document_id),
+        deleted=True,
     )

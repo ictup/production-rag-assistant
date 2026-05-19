@@ -118,3 +118,9 @@ class DocumentDetailResponse(BaseModel):
             document=DocumentItem.from_summary(result.document),
             chunks=[DocumentChunkItem.from_summary(chunk) for chunk in result.chunks],
         )
+
+
+class DeleteDocumentResponse(BaseModel):
+    workspace_id: str
+    document_id: str
+    deleted: bool

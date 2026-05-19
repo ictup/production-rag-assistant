@@ -170,6 +170,28 @@ class DocumentRepository:
             chunks=[self._build_chunk_summary(chunk) for chunk in chunks],
         )
 
+    async def delete_document(
+        self,
+        *,
+        document_id: uuid.UUID,
+        workspace_id: str = "public",
+        commit: bool = False,
+    ) -> bool:
+        workspace_id = workspace_id.strip() or "public"
+        statement = select(Document).where(
+            Document.id == document_id,
+            Document.workspace_id == workspace_id,
+        )
+        document = await self.session.scalar(statement)
+        if document is None:
+            return False
+
+        await self.session.delete(document)
+        await self.session.flush()
+        if commit:
+            await self.session.commit()
+        return True
+
     async def ingest_document(
         self,
         raw_document: RawDocument,

@@ -30,6 +30,7 @@ class FakeAsyncSession:
         self.execute_statement: Any | None = None
         self.added: list[Any] = []
         self.added_all: list[Any] = []
+        self.deleted: list[Any] = []
         self.flushed = False
         self.committed = False
 
@@ -50,6 +51,9 @@ class FakeAsyncSession:
 
     def add_all(self, instances: list[Any]) -> None:
         self.added_all.extend(instances)
+
+    async def delete(self, instance: Any) -> None:
+        self.deleted.append(instance)
 
     async def flush(self) -> None:
         self.flushed = True
@@ -242,6 +246,43 @@ async def test_get_document_detail_returns_none_for_missing_document() -> None:
     assert result is None
     assert session.scalar_statement is not None
     assert session.scalars_statement is None
+
+
+@pytest.mark.asyncio
+async def test_delete_document_deletes_matching_workspace_document() -> None:
+    document = make_document_model()
+    session = FakeAsyncSession(scalar_result=document)
+    repository = DocumentRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.delete_document(
+        document_id=document.id,
+        workspace_id=" tenant-a ",
+        commit=True,
+    )
+
+    assert result is True
+    assert session.deleted == [document]
+    assert session.flushed is True
+    assert session.committed is True
+    assert session.scalar_statement is not None
+    assert "documents.workspace_id" in str(session.scalar_statement)
+
+
+@pytest.mark.asyncio
+async def test_delete_document_returns_false_for_missing_document() -> None:
+    session = FakeAsyncSession(scalar_result=None)
+    repository = DocumentRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.delete_document(
+        document_id=uuid.uuid4(),
+        workspace_id="tenant-a",
+        commit=True,
+    )
+
+    assert result is False
+    assert session.deleted == []
+    assert session.flushed is False
+    assert session.committed is False
 
 
 @pytest.mark.asyncio

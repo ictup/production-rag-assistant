@@ -30,6 +30,7 @@ https://github.com/ictup/Production_RAG_Assistant.git
 - 聊天日志查询接口：`GET /chat/logs`
 - 文档列表接口：`GET /documents`
 - 文档详情接口：`GET /documents/{document_id}`
+- 文档删除接口：`DELETE /documents/{document_id}`
 - Prometheus 指标接口：`GET /metrics`
 - API key 鉴权：`Authorization: Bearer dev-key`
 - workspace 隔离头：`X-Workspace-ID`
@@ -343,6 +344,20 @@ curl.exe http://127.0.0.1:8000/documents/<document_id> `
 - `document`
 - `chunks`
 
+删除文档及其 chunks：
+
+```powershell
+curl.exe -X DELETE http://127.0.0.1:8000/documents/<document_id> `
+  -H "Authorization: Bearer dev-key" `
+  -H "X-Workspace-ID: public"
+```
+
+响应会包含：
+
+- `workspace_id`
+- `document_id`
+- `deleted`
+
 ### Metrics
 
 ```powershell
@@ -381,7 +396,7 @@ uv run pytest
 当前最近一次本地通过结果：
 
 ```text
-236 passed
+242 passed
 ```
 
 ### Pipeline Smoke
@@ -627,8 +642,8 @@ Repository -> Settings -> Actions -> General
 
 - 文档列表 API 已完成：`GET /documents`。
 - 文档详情 API 已完成：`GET /documents/{document_id}`。
+- 文档删除 API 已完成：`DELETE /documents/{document_id}`。
 - 文档上传 API。
-- 文档删除 API。
 - 文档重新索引 API。
 - 当前已有 CLI 级 chunk embedding reindex，但还没有 API 入口。
 - workspace 管理 API。
@@ -735,7 +750,7 @@ OPENAI_API_KEY
 建议下一步优先做：
 
 ```text
-文档管理 API 第三步：删除文档
+文档管理 API 第四步：上传 Markdown 文档
 ```
 
 原因：
@@ -748,7 +763,7 @@ OPENAI_API_KEY
 - OpenAI provider 已有超时、有限重试和错误分类。
 - OpenAI provider 错误已可映射到 API 响应、日志和 metrics。
 - provider token 统计和 embedding/generation latency 细分已完成，可以支持基础成本估算和性能观察。
-- 文档列表和详情 API 已完成，下一步做删除接口，复用相同鉴权和 workspace 隔离模型，并依赖数据库 cascade 删除 chunks。
+- 文档列表、详情和删除 API 已完成，下一步做 Markdown 上传接口，把现有 CLI ingestion 能力开放给 API。
 
 启用 OpenAI embedding 后可以先跑：
 
