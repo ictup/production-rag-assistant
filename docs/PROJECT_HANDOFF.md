@@ -315,13 +315,19 @@ uv run pytest
 当前最近一次本地通过结果：
 
 ```text
-206 passed
+209 passed
 ```
 
 ### Pipeline Smoke
 
 ```powershell
 uv run python -m backend.app.rag.pipeline_smoke
+```
+
+真实 OpenAI 端到端 smoke，不修改 `.env`，临时覆盖 provider/model：
+
+```powershell
+uv run python -m backend.app.rag.pipeline_smoke --embedding-provider openai --generator-provider openai --llm-model gpt-5.4-nano
 ```
 
 ### Eval Gate
@@ -423,6 +429,8 @@ make eval-gate          eval 失败时返回非零退出码
 make embedding-smoke    验证当前 embedding provider 能返回正确维度
 make generator-smoke    验证当前 generator provider 能返回非空答案
 make pipeline-smoke     端到端 pipeline smoke
+make pipeline-smoke-openai
+                        用 OpenAI embedding/generator 跑真实端到端 smoke
 ```
 
 ## 9. 当前架构流程
@@ -441,7 +449,7 @@ flowchart TD
     J --> K["Retrieval confidence refusal"]
     K --> L["Reranker"]
     L --> M["Prompt builder"]
-    M --> N["Fake generator"]
+    M --> N["Generator provider (fake or OpenAI)"]
     N --> O["Citation validation"]
     O --> P["Chat response"]
     P --> Q["Chat log persistence"]
@@ -595,9 +603,10 @@ Repository -> Settings -> Actions -> General
 
 1. 用真实 `OPENAI_API_KEY` 跑一轮 OpenAI embedding smoke。
 2. 对已有 chunk 执行 embedding reindex，确保库内向量和 query 向量来自同一 provider。
-3. 用 OpenAI generator 跑一轮 pipeline smoke 和 eval。
-4. 增加 provider 超时、重试和错误分类测试。
-5. 增加 provider usage/token/cost 统计。
+3. 用 OpenAI generator 跑 pipeline smoke。
+4. 增加 OpenAI generator eval 模式和质量调优。
+5. 增加 provider 超时、重试和错误分类测试。
+6. 增加 provider usage/token/cost 统计。
 
 需要你提供：
 
@@ -648,14 +657,16 @@ OPENAI_API_KEY
 建议下一步优先做：
 
 ```text
-重建已有 chunk embedding，并验证 vector retrieval 指向正确文档
+增加 OpenAI generator eval 模式，并调优真实模型回答质量
 ```
 
 原因：
 
 - OpenAI embedding provider 已经过真实 smoke 验证。
-- 如果旧 chunk 仍然是 fake embedding，vector retrieval 会混用两个向量空间。
-- 完成 reindex 后，可以切换 OpenAI generator 验证真实回答质量。
+- chunk embedding 已可用 reindex CLI 重建。
+- OpenAI generator 已可单独 smoke。
+- 真实端到端 pipeline smoke 已可通过 provider/model override 运行。
+- 下一步应把真实 generator 纳入 eval，观察 citation、关键词和 refusal 稳定性。
 
 启用 OpenAI embedding 后可以先跑：
 
@@ -675,7 +686,13 @@ uv run python -m backend.app.rag.reindex_embeddings --workspace-id public --writ
 uv run python -m backend.app.rag.generator_smoke --provider openai --model gpt-5.4-nano
 ```
 
-这样项目就会从“本地教学型 RAG”进入“真实模型驱动 RAG”的阶段。
+真实端到端 smoke：
+
+```powershell
+uv run python -m backend.app.rag.pipeline_smoke --embedding-provider openai --generator-provider openai --llm-model gpt-5.4-nano
+```
+
+接下来要把同样的 provider override 能力扩展到 eval runner，形成真实模型质量回归。
 
 ## 15. 快速故障排查
 
