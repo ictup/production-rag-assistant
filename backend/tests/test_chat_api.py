@@ -16,6 +16,7 @@ from backend.app.rag.openai_provider import OpenAIErrorInfo, OpenAIProviderError
 from backend.app.rag.pipeline import (
     ChatPipelineRequest,
     ChatPipelineResponse,
+    ChatPipelineStreamEvent,
     RetrievalInfo,
     UsageInfo,
 )
@@ -74,6 +75,17 @@ class FakePipeline:
             ),
             citation_valid=self.citation_valid,
             refusal=self.refusal,
+        )
+
+    async def stream_answer(self, request: ChatPipelineRequest):
+        response = await self.answer_question(request)
+        yield ChatPipelineStreamEvent(
+            event_type="delta",
+            delta=response.answer,
+        )
+        yield ChatPipelineStreamEvent(
+            event_type="completed",
+            response=response,
         )
 
 

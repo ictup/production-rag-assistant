@@ -8,6 +8,7 @@ from backend.app.rag.citations import validate_citations
 from backend.app.rag.generation import (
     FakeGenerator,
     GeneratedAnswer,
+    GeneratedAnswerStreamEvent,
     Generator,
     OpenAIGenerationError,
     OpenAIResponsesGenerator,
@@ -19,6 +20,8 @@ from backend.app.rag.generation import (
     extract_question,
     extract_question_terms,
     first_sentence,
+    iter_openai_sse_events,
+    parse_openai_sse_event,
     score_sentence,
     select_relevant_sentences,
     split_sentences,
@@ -59,6 +62,20 @@ class RecordingGenerator:
             output_tokens=5,
         )
 
+    async def stream(self, prompt: str):
+        generated = await self.generate(prompt)
+        yield GeneratedAnswerStreamEvent(
+            event_type="delta",
+            delta=generated.answer,
+        )
+        yield GeneratedAnswerStreamEvent(
+            event_type="completed",
+            answer=generated.answer,
+            model=generated.model,
+            input_tokens=generated.input_tokens,
+            output_tokens=generated.output_tokens,
+        )
+
 
 @pytest.mark.asyncio
 async def test_fake_generator_returns_cited_answer_and_usage() -> None:
@@ -81,6 +98,32 @@ async def test_fake_generator_returns_cited_answer_and_usage() -> None:
     assert generated.input_tokens > 0
     assert generated.output_tokens > 0
     assert validate_citations(generated.answer, num_sources=1) is True
+
+
+@pytest.mark.asyncio
+async def test_fake_generator_streams_delta_and_completed_event() -> None:
+    prompt = build_rag_prompt(
+        "What problem does FlashAttention solve?",
+        [
+            make_chunk(
+                "FlashAttention reduces memory traffic between HBM and SRAM. "
+                "It tiles exact attention."
+            )
+        ],
+    )
+    generator = FakeGenerator(model_name="test-fake")
+
+    events = [event async for event in generator.stream(prompt)]
+
+    assert [event.event_type for event in events] == [
+        "delta",
+        "delta",
+        "completed",
+    ]
+    assert "".join(event.delta for event in events[:-1]) == events[-1].answer
+    assert events[-1].model == "test-fake"
+    assert events[-1].input_tokens is not None
+    assert events[-1].output_tokens is not None
 
 
 @pytest.mark.asyncio
@@ -146,6 +189,92 @@ async def test_openai_responses_generator_sends_expected_request() -> None:
     assert generated.input_tokens == 42
     assert generated.output_tokens == 7
     assert len(requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_openai_responses_generator_streams_text_deltas() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.url == "https://api.openai.test/v1/responses"
+        assert request.headers["Authorization"] == "Bearer test-key"
+        payload = request.read()
+        assert b'"stream":true' in payload
+        return httpx.Response(
+            200,
+            text=(
+                "event: response.output_text.delta\n"
+                'data: {"type":"response.output_text.delta","delta":"Flash"}\n\n'
+                "event: response.output_text.delta\n"
+                'data: {"type":"response.output_text.delta","delta":"Attention"}\n\n'
+                "event: response.completed\n"
+                "data: {"
+                '"type":"response.completed",'
+                '"response":{'
+                '"output_text":"FlashAttention",'
+                '"usage":{"input_tokens":42,"output_tokens":3}'
+                "}"
+                "}\n\n"
+            ),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)
+    ) as http_client:
+        generator = OpenAIResponsesGenerator(
+            api_key="test-key",
+            model_name="gpt-test",
+            base_url="https://api.openai.test/v1",
+            http_client=http_client,
+        )
+
+        events = [
+            event
+            async for event in generator.stream(
+                "Context: FlashAttention\n\nQuestion: Why?"
+            )
+        ]
+
+    assert [event.event_type for event in events] == [
+        "delta",
+        "delta",
+        "completed",
+    ]
+    assert [event.delta for event in events[:2]] == ["Flash", "Attention"]
+    assert events[-1].answer == "FlashAttention"
+    assert events[-1].model == "gpt-test"
+    assert events[-1].input_tokens == 42
+    assert events[-1].output_tokens == 3
+    assert len(requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_openai_responses_generator_stream_rejects_http_errors() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, text="rate limited")
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)
+    ) as http_client:
+        generator = OpenAIResponsesGenerator(
+            api_key="test-key",
+            model_name="gpt-test",
+            http_client=http_client,
+        )
+
+        with pytest.raises(OpenAIGenerationError, match="status 429") as exc_info:
+            _ = [
+                event
+                async for event in generator.stream(
+                    "Context: FlashAttention\n\nQuestion: Why?"
+                )
+            ]
+
+    assert exc_info.value.category == "rate_limit"
+    assert exc_info.value.retryable is True
+    assert exc_info.value.status_code == 429
 
 
 @pytest.mark.asyncio
@@ -217,6 +346,38 @@ def test_extract_openai_response_text_prefers_output_text_property() -> None:
 def test_extract_openai_response_text_rejects_missing_text() -> None:
     with pytest.raises(OpenAIGenerationError, match="output"):
         extract_openai_response_text({"output": []})
+
+
+def test_parse_openai_sse_event_reads_json_data_and_event_name() -> None:
+    event = parse_openai_sse_event(
+        [
+            "event: response.output_text.delta",
+            'data: {"delta":"token"}',
+        ]
+    )
+
+    assert event == {
+        "type": "response.output_text.delta",
+        "delta": "token",
+    }
+
+
+@pytest.mark.asyncio
+async def test_iter_openai_sse_events_groups_line_blocks() -> None:
+    async def lines():
+        for line in [
+            "event: response.output_text.delta",
+            'data: {"type":"response.output_text.delta","delta":"A"}',
+            "",
+            "event: response.output_text.delta",
+            'data: {"type":"response.output_text.delta","delta":"B"}',
+            "",
+        ]:
+            yield line
+
+    events = [event async for event in iter_openai_sse_events(lines())]
+
+    assert [event["delta"] for event in events] == ["A", "B"]
 
 
 def test_extract_question_reads_question_section() -> None:

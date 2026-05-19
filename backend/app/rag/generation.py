@@ -1,11 +1,21 @@
 import re
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from json import JSONDecodeError
+from json import loads as json_loads
 from typing import Protocol, runtime_checkable
 
 import httpx
 from pydantic import BaseModel, Field
 
 from backend.app.core.config import Settings, get_settings
-from backend.app.rag.openai_provider import OpenAIProviderError, post_with_retries
+from backend.app.rag.openai_provider import (
+    OpenAIErrorInfo,
+    OpenAIProviderError,
+    build_openai_status_error,
+    build_openai_transport_error,
+    post_with_retries,
+)
 from ingestion.chunking import count_tokens
 
 OPENAI_RESPONSES_PATH = "/responses"
@@ -31,6 +41,7 @@ STOPWORDS = {
     "what",
 }
 DEFAULT_ANSWER_SENTENCE_COUNT = 3
+GENERATOR_STREAM_CHUNK_SIZE = 80
 OPENAI_RAG_INSTRUCTIONS = (
     "You are a production RAG answer generator. Answer using only the provided "
     "context. Preserve citation markers like [1] and [2]. If the context is "
@@ -49,12 +60,25 @@ class GeneratedAnswer(BaseModel):
     output_tokens: int = Field(ge=0)
 
 
+@dataclass(frozen=True)
+class GeneratedAnswerStreamEvent:
+    event_type: str
+    delta: str = ""
+    answer: str | None = None
+    model: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+
+
 @runtime_checkable
 class Generator(Protocol):
     provider_name: str
     model_name: str
 
     async def generate(self, prompt: str) -> GeneratedAnswer:
+        pass
+
+    def stream(self, prompt: str) -> AsyncIterator[GeneratedAnswerStreamEvent]:
         pass
 
 
@@ -78,6 +102,21 @@ class FakeGenerator:
             model=self.model_name,
             input_tokens=count_tokens(prompt),
             output_tokens=count_tokens(answer),
+        )
+
+    async def stream(self, prompt: str) -> AsyncIterator[GeneratedAnswerStreamEvent]:
+        generated = await self.generate(prompt)
+        for index in range(0, len(generated.answer), GENERATOR_STREAM_CHUNK_SIZE):
+            yield GeneratedAnswerStreamEvent(
+                event_type="delta",
+                delta=generated.answer[index : index + GENERATOR_STREAM_CHUNK_SIZE],
+            )
+        yield GeneratedAnswerStreamEvent(
+            event_type="completed",
+            answer=generated.answer,
+            model=generated.model,
+            input_tokens=generated.input_tokens,
+            output_tokens=generated.output_tokens,
         )
 
 
@@ -142,6 +181,69 @@ class OpenAIResponsesGenerator:
             output_tokens=usage.get("output_tokens", count_tokens(answer)),
         )
 
+    async def stream(self, prompt: str) -> AsyncIterator[GeneratedAnswerStreamEvent]:
+        prompt = prompt.strip()
+        if not prompt:
+            raise ValueError("prompt must not be blank")
+
+        payload = {
+            "model": self.model_name,
+            "instructions": OPENAI_RAG_INSTRUCTIONS,
+            "input": prompt,
+            "max_output_tokens": self.max_output_tokens,
+            "store": False,
+            "stream": True,
+        }
+
+        answer_parts: list[str] = []
+        completed_answer: str | None = None
+        completed_usage: dict[str, int] = {}
+
+        async for event in self._stream_response(payload):
+            event_type = event.get("type")
+            if event_type == "response.output_text.delta":
+                delta = event.get("delta")
+                if isinstance(delta, str) and delta:
+                    answer_parts.append(delta)
+                    yield GeneratedAnswerStreamEvent(
+                        event_type="delta",
+                        delta=delta,
+                    )
+                continue
+
+            if event_type == "response.output_text.done":
+                text = event.get("text")
+                if isinstance(text, str) and text.strip():
+                    completed_answer = text.strip()
+                continue
+
+            if event_type == "response.completed":
+                response_data = event.get("response")
+                if isinstance(response_data, dict):
+                    completed_usage = extract_openai_response_usage(response_data)
+                    try:
+                        completed_answer = extract_openai_response_text(response_data)
+                    except OpenAIGenerationError:
+                        completed_answer = completed_answer
+                continue
+
+            if event_type == "error":
+                raise build_openai_stream_event_error(event)
+
+        answer = (completed_answer or "".join(answer_parts)).strip()
+        if not answer:
+            raise OpenAIGenerationError(
+                "OpenAI response stream did not include output text"
+            )
+
+        yield GeneratedAnswerStreamEvent(
+            event_type="completed",
+            answer=answer,
+            model=self.model_name,
+            input_tokens=completed_usage.get("input_tokens", count_tokens(prompt)),
+            output_tokens=completed_usage.get("output_tokens", count_tokens(answer)),
+        )
+
     async def _create_response(self, payload: dict) -> dict:
         if self.http_client is not None:
             return await self._post_response(self.http_client, payload)
@@ -181,6 +283,60 @@ class OpenAIResponsesGenerator:
         if not isinstance(response_data, dict):
             raise OpenAIGenerationError("OpenAI response must be an object")
         return response_data
+
+    async def _stream_response(
+        self,
+        payload: dict,
+    ) -> AsyncIterator[dict]:
+        if self.http_client is not None:
+            async for event in self._stream_response_with_client(
+                self.http_client,
+                payload,
+            ):
+                yield event
+            return
+
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            async for event in self._stream_response_with_client(client, payload):
+                yield event
+
+    async def _stream_response_with_client(
+        self,
+        client: httpx.AsyncClient,
+        payload: dict,
+    ) -> AsyncIterator[dict]:
+        try:
+            async with client.stream(
+                "POST",
+                f"{self.base_url}{OPENAI_RESPONSES_PATH}",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            ) as response:
+                if not response.is_success:
+                    response_text = (await response.aread()).decode(
+                        "utf-8",
+                        errors="replace",
+                    )
+                    raise OpenAIGenerationError(
+                        build_openai_status_error(
+                            operation="OpenAI response stream",
+                            status_code=response.status_code,
+                            response_text=response_text,
+                        )
+                    )
+
+                async for event in iter_openai_sse_events(response.aiter_lines()):
+                    yield event
+        except httpx.HTTPError as exc:
+            raise OpenAIGenerationError(
+                build_openai_transport_error(
+                    operation="OpenAI response stream",
+                    exc=exc,
+                )
+            ) from exc
 
 
 def extract_openai_response_text(response_data: dict) -> str:
@@ -225,6 +381,84 @@ def extract_openai_response_usage(response_data: dict) -> dict[str, int]:
         if isinstance(value, int) and value >= 0:
             parsed_usage[key] = value
     return parsed_usage
+
+
+async def iter_openai_sse_events(
+    lines: AsyncIterator[str],
+) -> AsyncIterator[dict]:
+    event_lines: list[str] = []
+    async for line in lines:
+        if line == "":
+            event = parse_openai_sse_event(event_lines)
+            event_lines = []
+            if event is not None:
+                yield event
+            continue
+        event_lines.append(line)
+
+    event = parse_openai_sse_event(event_lines)
+    if event is not None:
+        yield event
+
+
+def parse_openai_sse_event(lines: list[str]) -> dict | None:
+    event_name: str | None = None
+    data_lines: list[str] = []
+
+    for line in lines:
+        if line.startswith("event:"):
+            event_name = line.removeprefix("event:").strip()
+            continue
+        if line.startswith("data:"):
+            data_lines.append(line.removeprefix("data:").lstrip())
+
+    if not data_lines:
+        return None
+
+    data = "\n".join(data_lines)
+    if data == "[DONE]":
+        return None
+
+    try:
+        event = json_loads(data)
+    except JSONDecodeError as exc:
+        raise OpenAIGenerationError(
+            "OpenAI response stream included invalid JSON event"
+        ) from exc
+
+    if not isinstance(event, dict):
+        raise OpenAIGenerationError(
+            "OpenAI response stream event must be an object"
+        )
+    if event_name and "type" not in event:
+        event["type"] = event_name
+    return event
+
+
+def build_openai_stream_event_error(event: dict) -> OpenAIGenerationError:
+    error = event.get("error")
+    if isinstance(error, dict):
+        message = error.get("message")
+        code = error.get("code")
+        category = str(code) if code else "provider_error"
+        if isinstance(message, str) and message.strip():
+            return OpenAIGenerationError(
+                OpenAIErrorInfo(
+                    operation="OpenAI response stream",
+                    category=category,
+                    message=message.strip(),
+                    retryable=False,
+                )
+            )
+
+    return OpenAIGenerationError(
+        OpenAIErrorInfo(
+            operation="OpenAI response stream",
+            category="provider_error",
+            message="OpenAI response stream returned an error event",
+            retryable=False,
+        )
+    )
 
 
 def extract_question(prompt: str) -> str:

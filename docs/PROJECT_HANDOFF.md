@@ -329,7 +329,9 @@ curl.exe -N -X POST http://127.0.0.1:8000/chat/stream `
 - `final`
 - `done`
 
-它复用 `/chat` 的鉴权、workspace、session 校验、日志写入、metrics 和 provider 错误映射。当前版本先在 API 层把完整回答切块输出；底层 OpenAI Responses 真 token streaming 还未接入 generator。
+它复用 `/chat` 的鉴权、workspace、session 校验、日志写入和 metrics。OpenAI generator 已接入 Responses API 的真实 streaming：请求会带 `stream: true`，并解析 `response.output_text.delta` 作为 `answer_delta` 输出。fake generator 也实现了同一套 stream 接口，方便本地测试。
+
+如果 provider 在流式响应开始后失败，`/chat/stream` 会返回 `error` SSE 事件；普通 `/chat` 仍然返回结构化 HTTP 错误。
 
 如果 OpenAI provider 失败，响应会包含结构化错误：
 
@@ -532,7 +534,7 @@ uv run pytest
 当前最近一次本地通过结果：
 
 ```text
-279 passed
+285 passed
 ```
 
 ### Pipeline Smoke
@@ -764,6 +766,7 @@ Repository -> Settings -> Actions -> General
 - OpenAI provider API 错误响应、结构化日志和 metrics。
 - provider API key 配置校验目前覆盖 OpenAI embedding 和 OpenAI generator。
 - provider token 统计和 embedding/generation latency 细分指标。
+- OpenAI Responses API streaming 已接入 generator 和 `/chat/stream`。
 - provider 真实美元成本估算还未实现；建议后续用配置化价格表，不要把频繁变化的官方价格写死在代码里。
 
 ### 检索质量
@@ -787,8 +790,8 @@ Repository -> Settings -> Actions -> General
 - workspace 管理 API。
 - `/chat` 已支持可选 `session_id`，并会把 chat log 挂到对应会话。
 - conversation history API 已完成：`GET /chat/sessions/{session_id}/logs`。
-- streaming chat API 第一版已完成：`POST /chat/stream`，当前为 SSE 兼容分块输出。
-- 底层 OpenAI Responses 真 token streaming。
+- streaming chat API 已完成：`POST /chat/stream`。
+- 底层 OpenAI Responses 真 token streaming 已完成。
 
 ### 前端与体验
 
@@ -893,7 +896,7 @@ OPENAI_API_KEY
 建议下一步优先做：
 
 ```text
-OpenAI generator streaming：接入真实 token stream
+前端聊天 UI：接入普通 chat、session history 和 SSE streaming
 ```
 
 原因：
@@ -906,7 +909,7 @@ OpenAI generator streaming：接入真实 token stream
 - OpenAI provider 已有超时、有限重试和错误分类。
 - OpenAI provider 错误已可映射到 API 响应、日志和 metrics。
 - provider token 统计和 embedding/generation latency 细分已完成，可以支持基础成本估算和性能观察。
-- chat session 表、repository、基础 API、`/chat` 的 `session_id` 挂载、conversation history API 和 API 层 SSE streaming 都已完成，下一步把 OpenAI Responses 的真实 token stream 接入 generator。
+- chat session 表、repository、基础 API、`/chat` 的 `session_id` 挂载、conversation history API、API 层 SSE streaming 和底层 OpenAI Responses token streaming 都已完成，下一步可以开始做最小前端聊天 UI。
 
 启用 OpenAI embedding 后可以先跑：
 

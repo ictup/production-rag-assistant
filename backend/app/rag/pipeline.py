@@ -1,4 +1,6 @@
 import time
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,6 +68,13 @@ class ChatPipelineResponse(BaseModel):
     usage: UsageInfo
     citation_valid: bool | None
     refusal: RefusalInfo | None = None
+
+
+@dataclass(frozen=True)
+class ChatPipelineStreamEvent:
+    event_type: str
+    delta: str = ""
+    response: ChatPipelineResponse | None = None
 
 
 class RagPipeline:
@@ -198,6 +207,147 @@ class RagPipeline:
             citation_valid=citation_valid,
             refusal=None,
         )
+
+    async def stream_answer(
+        self,
+        request: ChatPipelineRequest,
+    ) -> AsyncIterator[ChatPipelineStreamEvent]:
+        started_at = time.perf_counter()
+        vector_top_k = request.vector_top_k or self.settings.vector_top_k
+        sparse_top_k = request.sparse_top_k or self.settings.sparse_top_k
+        fused_top_k = request.fused_top_k or self.settings.fused_top_k
+        rerank_top_n = request.rerank_top_n or self.settings.rerank_top_n
+
+        question_refusal = should_refuse_question(request.question)
+        if question_refusal is not None:
+            response = build_refusal_response(
+                refusal=question_refusal,
+                mode="question_guard",
+                vector_top_k=vector_top_k,
+                sparse_top_k=sparse_top_k,
+                fused_count=0,
+                top_score=None,
+                model=self.generator.model_name,
+                generator_provider=self.generator.provider_name,
+                embedding_model=self.embedding_client.model_name,
+                embedding_provider=self.embedding_client.provider_name,
+                started_at=started_at,
+            )
+            yield ChatPipelineStreamEvent(event_type="delta", delta=response.answer)
+            yield ChatPipelineStreamEvent(event_type="completed", response=response)
+            return
+
+        embedding_started_at = time.perf_counter()
+        query_embedding = await self.embedding_client.embed_query(request.question)
+        embedding_latency_ms = max(
+            0,
+            int((time.perf_counter() - embedding_started_at) * 1000),
+        )
+        vector_results = await VectorRetriever(self.session).retrieve(
+            query_embedding=query_embedding,
+            top_k=vector_top_k,
+            workspace_id=request.workspace_id,
+        )
+        sparse_results = await SparseRetriever(self.session).retrieve(
+            query=request.question,
+            top_k=sparse_top_k,
+            workspace_id=request.workspace_id,
+        )
+        fused_results = reciprocal_rank_fusion(
+            [vector_results, sparse_results],
+            k=self.settings.rrf_k,
+            top_n=fused_top_k,
+        )
+
+        refusal = should_refuse(
+            fused_results,
+            threshold=self.settings.refusal_score_threshold,
+        )
+        if refusal is not None:
+            response = build_refusal_response(
+                refusal=refusal,
+                mode="hybrid_rrf",
+                vector_top_k=vector_top_k,
+                sparse_top_k=sparse_top_k,
+                fused_count=len(fused_results),
+                top_score=refusal.top_score,
+                model=self.generator.model_name,
+                generator_provider=self.generator.provider_name,
+                embedding_model=self.embedding_client.model_name,
+                embedding_provider=self.embedding_client.provider_name,
+                started_at=started_at,
+                embedding_latency_ms=embedding_latency_ms,
+            )
+            yield ChatPipelineStreamEvent(event_type="delta", delta=response.answer)
+            yield ChatPipelineStreamEvent(event_type="completed", response=response)
+            return
+
+        used_chunks = (
+            await self.reranker.rerank(
+                query=request.question,
+                chunks=fused_results,
+                top_n=rerank_top_n,
+            )
+            if request.rerank
+            else fused_results[:rerank_top_n]
+        )
+        prompt = build_rag_prompt(request.question, used_chunks)
+        generation_started_at = time.perf_counter()
+        answer_parts: list[str] = []
+        generated_model = self.generator.model_name
+        input_tokens = 0
+        output_tokens = 0
+
+        async for generated_event in self.generator.stream(prompt):
+            if generated_event.event_type == "delta" and generated_event.delta:
+                answer_parts.append(generated_event.delta)
+                yield ChatPipelineStreamEvent(
+                    event_type="delta",
+                    delta=generated_event.delta,
+                )
+                continue
+
+            if generated_event.event_type == "completed":
+                if generated_event.answer is not None:
+                    answer_parts = [generated_event.answer]
+                if generated_event.model is not None:
+                    generated_model = generated_event.model
+                input_tokens = generated_event.input_tokens or 0
+                output_tokens = generated_event.output_tokens or 0
+
+        generation_latency_ms = max(
+            0,
+            int((time.perf_counter() - generation_started_at) * 1000),
+        )
+        answer = "".join(answer_parts).strip()
+        sources = build_sources(used_chunks)
+        citation_valid = validate_citations(answer, len(sources))
+        response = ChatPipelineResponse(
+            answer=answer,
+            sources=sources,
+            retrieval=build_retrieval_info(
+                mode="hybrid_rrf_rerank" if request.rerank else "hybrid_rrf",
+                vector_top_k=vector_top_k,
+                sparse_top_k=sparse_top_k,
+                fused_count=len(fused_results),
+                used_count=len(used_chunks),
+                top_score=fused_results[0].score if fused_results else None,
+            ),
+            usage=build_usage_info(
+                model=generated_model,
+                generator_provider=self.generator.provider_name,
+                embedding_model=self.embedding_client.model_name,
+                embedding_provider=self.embedding_client.provider_name,
+                started_at=started_at,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                embedding_latency_ms=embedding_latency_ms,
+                generation_latency_ms=generation_latency_ms,
+            ),
+            citation_valid=citation_valid,
+            refusal=None,
+        )
+        yield ChatPipelineStreamEvent(event_type="completed", response=response)
 
 
 def build_retrieval_info(

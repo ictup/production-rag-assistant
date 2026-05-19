@@ -110,6 +110,48 @@ async def test_pipeline_answers_with_sources_and_valid_citations() -> None:
 
 
 @pytest.mark.asyncio
+async def test_pipeline_streams_answer_delta_then_final_response() -> None:
+    chunk_id = uuid.uuid4()
+    document_id = uuid.uuid4()
+    session = FakeAsyncSession(
+        [
+            [make_row(chunk_id=chunk_id, document_id=document_id)],
+            [make_row(chunk_id=chunk_id, document_id=document_id)],
+        ]
+    )
+    pipeline = RagPipeline(
+        session=session,  # type: ignore[arg-type]
+        settings=make_settings(),
+        embedding_client=FakeEmbeddingClient(
+            dimension=1536,
+            model_name="test-fake-embedding",
+        ),
+        reranker=NoOpReranker(),
+        generator=FakeGenerator(model_name="test-fake-llm"),
+    )
+
+    events = [
+        event
+        async for event in pipeline.stream_answer(
+            ChatPipelineRequest(question="What problem does FlashAttention solve?")
+        )
+    ]
+
+    assert [event.event_type for event in events] == [
+        "delta",
+        "delta",
+        "completed",
+    ]
+    final_response = events[-1].response
+    assert final_response is not None
+    assert final_response.answer == "".join(event.delta for event in events[:-1])
+    assert "FlashAttention reduces memory traffic" in final_response.answer
+    assert final_response.citation_valid is True
+    assert final_response.usage.generator_provider == "fake"
+    assert final_response.sources[0].chunk_id == str(chunk_id)
+
+
+@pytest.mark.asyncio
 async def test_pipeline_refuses_when_retrieval_returns_no_chunks() -> None:
     session = FakeAsyncSession([[], []])
     pipeline = RagPipeline(

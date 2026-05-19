@@ -19,13 +19,16 @@ from backend.app.db.repositories import (
 from backend.app.db.session import get_db_session
 from backend.app.observability.metrics import metrics_registry
 from backend.app.rag.openai_provider import OpenAIProviderError
-from backend.app.rag.pipeline import ChatPipelineResponse, RagPipeline
+from backend.app.rag.pipeline import (
+    ChatPipelineRequest,
+    ChatPipelineResponse,
+    RagPipeline,
+)
 from backend.app.schemas.chat import ChatLogsResponse, ChatRequest, ChatResponse
 
 router = APIRouter(tags=["chat"])
 PROVIDER_LOGGER_NAME = "backend.provider"
 CHAT_STREAM_MEDIA_TYPE = "text/event-stream"
-CHAT_STREAM_CHUNK_SIZE = 80
 PROVIDER_ERROR_STATUS_BY_CATEGORY = {
     "authentication": 502,
     "permission": 502,
@@ -246,45 +249,94 @@ def build_sse_event(*, event: str, data: dict[str, object]) -> str:
     return f"event: {event}\ndata: {payload}\n\n"
 
 
-def split_answer_for_stream(answer: str) -> list[str]:
-    if not answer:
-        return []
-    return [
-        answer[index : index + CHAT_STREAM_CHUNK_SIZE]
-        for index in range(0, len(answer), CHAT_STREAM_CHUNK_SIZE)
-    ]
-
-
-async def iter_chat_stream(
+async def iter_chat_stream_events(
     *,
-    response: ChatResponse,
+    request_id: str,
+    session_id: uuid.UUID | None,
+    workspace_id: str,
+    chat_request: ChatRequest,
+    pipeline_request: ChatPipelineRequest,
+    pipeline: RagPipeline,
+    chat_log_repository: ChatLogRepository,
 ) -> AsyncIterator[str]:
     yield build_sse_event(
         event="metadata",
         data={
-            "request_id": response.request_id,
-            "session_id": response.session_id,
-            "citation_valid": response.citation_valid,
+            "request_id": request_id,
+            "session_id": str(session_id) if session_id is not None else None,
         },
     )
-    for index, delta in enumerate(split_answer_for_stream(response.answer)):
-        yield build_sse_event(
-            event="answer_delta",
-            data={
-                "index": index,
-                "delta": delta,
-            },
+    index = 0
+
+    try:
+        async for pipeline_event in pipeline.stream_answer(pipeline_request):
+            if pipeline_event.event_type == "delta" and pipeline_event.delta:
+                yield build_sse_event(
+                    event="answer_delta",
+                    data={
+                        "index": index,
+                        "delta": pipeline_event.delta,
+                    },
+                )
+                index += 1
+                continue
+
+            if pipeline_event.event_type != "completed":
+                continue
+            if pipeline_event.response is None:
+                continue
+
+            pipeline_response = pipeline_event.response
+            metrics_registry.observe_rag_response(
+                refusal_reason=(
+                    pipeline_response.refusal.reason
+                    if pipeline_response.refusal
+                    else None
+                ),
+                citation_valid=pipeline_response.citation_valid,
+            )
+            observe_chat_provider_usage(pipeline_response)
+            await chat_log_repository.create_chat_log(
+                build_chat_log_input(
+                    request_id=request_id,
+                    workspace_id=workspace_id,
+                    session_id=session_id,
+                    request=chat_request,
+                    response=pipeline_response,
+                ),
+                commit=True,
+            )
+            response = ChatResponse.from_pipeline_response(
+                pipeline_response,
+                request_id=request_id,
+                session_id=session_id,
+            )
+            yield build_sse_event(
+                event="final",
+                data=response.model_dump(mode="json"),
+            )
+            yield build_sse_event(
+                event="done",
+                data={
+                    "request_id": request_id,
+                },
+            )
+            return
+    except OpenAIProviderError as exc:
+        metrics_registry.observe_provider_error(
+            provider="openai",
+            operation=exc.operation,
+            category=exc.category,
         )
-    yield build_sse_event(
-        event="final",
-        data=response.model_dump(mode="json"),
-    )
-    yield build_sse_event(
-        event="done",
-        data={
-            "request_id": response.request_id,
-        },
-    )
+        log_provider_error(
+            error=exc,
+            request_id=request_id,
+            workspace_id=workspace_id,
+        )
+        yield build_sse_event(
+            event="error",
+            data=build_provider_error_detail(error=exc, request_id=request_id),
+        )
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -334,21 +386,26 @@ async def chat_stream(
     ],
     workspace_id: Annotated[str | None, Header(alias="X-Workspace-ID")] = None,
 ) -> StreamingResponse:
-    request_id, session_id, pipeline_response = await run_chat_request(
-        http_request=http_request,
-        request=request,
-        pipeline=pipeline,
-        chat_log_repository=chat_log_repository,
-        chat_session_repository=chat_session_repository,
-        workspace_id=workspace_id,
+    request_id = get_request_id(http_request)
+    normalized_workspace_id = normalize_workspace_id(workspace_id)
+    session_id = await resolve_chat_session_id(
+        session_id=request.session_id,
+        workspace_id=normalized_workspace_id,
+        repository=chat_session_repository,
     )
-    response = ChatResponse.from_pipeline_response(
-        pipeline_response,
-        request_id=request_id,
-        session_id=session_id,
+    pipeline_request = request.to_pipeline_request(
+        workspace_id=normalized_workspace_id,
     )
     return StreamingResponse(
-        iter_chat_stream(response=response),
+        iter_chat_stream_events(
+            request_id=request_id,
+            session_id=session_id,
+            workspace_id=normalized_workspace_id,
+            chat_request=request,
+            pipeline_request=pipeline_request,
+            pipeline=pipeline,
+            chat_log_repository=chat_log_repository,
+        ),
         media_type=CHAT_STREAM_MEDIA_TYPE,
         headers={
             "Cache-Control": "no-cache",
