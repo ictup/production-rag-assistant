@@ -2,6 +2,8 @@
 
 This guide is the source of truth for runtime configuration. Keep `.env`
 local-only, use `.env.example` as the template, and never commit real secrets.
+For operational startup, verification, logging, and recovery steps, use
+`docs/DEPLOYMENT_RUNBOOK.md`.
 
 ## Quick Start
 

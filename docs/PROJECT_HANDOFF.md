@@ -28,6 +28,12 @@ docker-compose.prod.yml
 docs/CONFIGURATION.md
 ```
 
+当前部署 runbook：
+
+```text
+docs/DEPLOYMENT_RUNBOOK.md
+```
+
 ## 1. 当前项目状态
 
 这是一个生产风格的 RAG assistant 后端项目。当前阶段已经完成了可本地运行、可 ingest、可检索、可回答、可记录日志、可评测、可 CI 回归的后端 MVP。
@@ -182,6 +188,12 @@ data/raw/
 
 ```text
 docs/CONFIGURATION.md
+```
+
+部署启动、验证、日志、停服和恢复步骤见：
+
+```text
+docs/DEPLOYMENT_RUNBOOK.md
 ```
 
 ### 必需工具
@@ -659,7 +671,7 @@ uv run pytest
 当前最近一次本地通过结果：
 
 ```text
-314 passed
+318 passed
 ```
 
 ### Pipeline Smoke
@@ -937,7 +949,7 @@ Repository -> Settings -> Actions -> General
 - `.dockerignore` 已完成，排除 `.env`、`.venv`、缓存和本地报告。
 - production docker-compose 已完成：`docker-compose.prod.yml`。
 - 环境变量和 secrets 文档已完成：`docs/CONFIGURATION.md`。
-- 部署说明。
+- 部署 runbook 已完成：`docs/DEPLOYMENT_RUNBOOK.md`。
 - CORS 策略已完成：默认关闭，通过 `CORS_ALLOWED_ORIGINS` 或 `CORS_ALLOWED_ORIGIN_REGEX` 显式开启。
 - rate limit 已完成：默认关闭，通过 `RATE_LIMIT_ENABLED` 显式开启。
 - 更完整的认证和权限模型。
@@ -1022,14 +1034,15 @@ OPENAI_API_KEY
 3. CORS。已完成。
 4. rate limit。已完成。
 5. 环境变量和 secrets 文档。已完成。
-6. dashboard 和 alert。
+6. 部署 runbook。已完成。
+7. dashboard 和 alert。
 
 ## 14. 当前优先级建议
 
 建议下一步优先做：
 
 ```text
-生产部署 runbook
+可观测性 dashboard 和 alert 模板
 ```
 
 原因：
@@ -1042,7 +1055,7 @@ OPENAI_API_KEY
 - OpenAI provider 已有超时、有限重试和错误分类。
 - OpenAI provider 错误已可映射到 API 响应、日志和 metrics。
 - provider token 统计和 embedding/generation latency 细分已完成，可以支持基础成本估算和性能观察。
-- chat session 表、repository、基础 API、`/chat` 的 `session_id` 挂载、conversation history API、API 层 SSE streaming、底层 OpenAI Responses token streaming、最小聊天 UI、文档上传/reindex UI、backend Dockerfile、production compose、CORS、基础 rate limit 和配置/secrets 文档都已完成，下一步补从空机器启动、验证、日志、停服和恢复的部署 runbook。
+- chat session 表、repository、基础 API、`/chat` 的 `session_id` 挂载、conversation history API、API 层 SSE streaming、底层 OpenAI Responses token streaming、最小聊天 UI、文档上传/reindex UI、backend Dockerfile、production compose、CORS、基础 rate limit、配置/secrets 文档和部署 runbook 都已完成，下一步把现有 metrics 整理成 dashboard 和 alert 模板。
 
 启用 OpenAI embedding 后可以先跑：
 
