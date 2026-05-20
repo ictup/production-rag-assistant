@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.api.security import ApiPrincipal, require_api_key, resolve_workspace_id
 from backend.app.api.workspace_validation import (
     get_workspace_repository,
-    require_existing_workspace,
+    require_active_workspace,
 )
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.logging import serialize_log_payload
@@ -482,7 +482,7 @@ async def chat(
     workspace_id: Annotated[str | None, Header(alias="X-Workspace-ID")] = None,
 ) -> ChatResponse:
     normalized_workspace_id = resolve_workspace_id(principal, workspace_id)
-    await require_existing_workspace(
+    await require_active_workspace(
         workspace_id=normalized_workspace_id,
         repository=workspace_repository,
     )
@@ -525,7 +525,7 @@ async def chat_stream(
 ) -> StreamingResponse:
     request_id = get_request_id(http_request)
     normalized_workspace_id = resolve_workspace_id(principal, workspace_id)
-    await require_existing_workspace(
+    await require_active_workspace(
         workspace_id=normalized_workspace_id,
         repository=workspace_repository,
     )

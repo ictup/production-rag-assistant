@@ -150,7 +150,7 @@ Run the eval gate:
 uv run python -m evals.run --format summary --fail-on-failure --no-output
 ```
 
-Current local baseline: `473 passed`.
+Current local baseline: `483 passed`.
 
 ## Configuration Model
 
@@ -232,6 +232,10 @@ curl.exe -X POST http://127.0.0.1:8000/workspaces/tenant-a/archive `
 curl.exe -X POST http://127.0.0.1:8000/workspaces/tenant-a/restore `
   -H "Authorization: Bearer dev-key"
 ```
+
+Archived workspaces remain readable for audit and recovery, but write-oriented
+operations return `409 workspace archived`. This includes chat, streaming chat,
+chat session creation, document upload, document deletion, and document reindex.
 
 ## Validation Checklist
 

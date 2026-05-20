@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.api.security import ApiPrincipal, require_api_key, resolve_workspace_id
 from backend.app.api.workspace_validation import (
     get_workspace_repository,
-    require_existing_workspace,
+    require_active_workspace,
 )
 from backend.app.db.repositories import (
     ChatLogRepository,
@@ -74,7 +74,7 @@ async def create_chat_session(
     workspace_id: Annotated[str | None, Header(alias="X-Workspace-ID")] = None,
 ) -> ChatSessionResponse:
     normalized_workspace_id = resolve_workspace_id(principal, workspace_id)
-    await require_existing_workspace(
+    await require_active_workspace(
         workspace_id=normalized_workspace_id,
         repository=workspace_repository,
     )

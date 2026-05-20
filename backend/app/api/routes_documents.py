@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.api.security import ApiPrincipal, require_api_key, resolve_workspace_id
 from backend.app.api.workspace_validation import (
     get_workspace_repository,
-    require_existing_workspace,
+    require_active_workspace,
 )
 from backend.app.db.repositories import DocumentRepository, WorkspaceRepository
 from backend.app.db.session import get_db_session
@@ -86,7 +86,7 @@ async def create_document(
     workspace_id: Annotated[str | None, Header(alias="X-Workspace-ID")] = None,
 ) -> CreateDocumentResponse:
     normalized_workspace_id = resolve_workspace_id(principal, workspace_id)
-    await require_existing_workspace(
+    await require_active_workspace(
         workspace_id=normalized_workspace_id,
         repository=workspace_repository,
     )
@@ -169,7 +169,7 @@ async def reindex_documents(
     workspace_id: Annotated[str | None, Header(alias="X-Workspace-ID")] = None,
 ) -> ReindexDocumentsResponse:
     normalized_workspace_id = resolve_workspace_id(principal, workspace_id)
-    await require_existing_workspace(
+    await require_active_workspace(
         workspace_id=normalized_workspace_id,
         repository=workspace_repository,
     )
@@ -225,7 +225,7 @@ async def delete_document(
     workspace_id: Annotated[str | None, Header(alias="X-Workspace-ID")] = None,
 ) -> DeleteDocumentResponse:
     normalized_workspace_id = resolve_workspace_id(principal, workspace_id)
-    await require_existing_workspace(
+    await require_active_workspace(
         workspace_id=normalized_workspace_id,
         repository=workspace_repository,
     )

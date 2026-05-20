@@ -1,6 +1,7 @@
 import json
 import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -171,14 +172,24 @@ class FakeChatSessionRepository:
 
 
 class FakeWorkspaceRepository:
-    def __init__(self, workspace_ids: set[str] | None = None) -> None:
+    def __init__(
+        self,
+        workspace_ids: set[str] | None = None,
+        archived_workspace_ids: set[str] | None = None,
+    ) -> None:
         self.workspace_ids = workspace_ids or {"public", "tenant-a"}
+        self.archived_workspace_ids = archived_workspace_ids or set()
         self.get_calls: list[str] = []
 
     async def get_workspace(self, *, workspace_id: str):
         self.get_calls.append(workspace_id)
         if workspace_id in self.workspace_ids:
-            return object()
+            archived_at = (
+                datetime(2026, 5, 20, 8, 0, tzinfo=UTC)
+                if workspace_id in self.archived_workspace_ids
+                else None
+            )
+            return SimpleNamespace(id=workspace_id, archived_at=archived_at)
         return None
 
 
@@ -487,6 +498,34 @@ def test_chat_route_rejects_missing_workspace_before_pipeline_call() -> None:
     assert fake_chat_log_repository.inputs == []
 
 
+def test_chat_route_rejects_archived_workspace_before_pipeline_call() -> None:
+    fake_pipeline = FakePipeline()
+    fake_chat_log_repository = FakeChatLogRepository()
+    fake_workspace_repository = FakeWorkspaceRepository(
+        archived_workspace_ids={"tenant-a"}
+    )
+    client = build_client(
+        fake_pipeline,
+        fake_chat_log_repository,
+        fake_workspace_repository=fake_workspace_repository,
+    )
+
+    response = client.post(
+        "/chat",
+        headers={
+            **AUTH_HEADERS,
+            "X-Workspace-ID": "tenant-a",
+        },
+        json={"question": "What is FlashAttention?"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "workspace archived"}
+    assert fake_workspace_repository.get_calls == ["tenant-a"]
+    assert fake_pipeline.requests == []
+    assert fake_chat_log_repository.inputs == []
+
+
 def test_chat_stream_route_returns_sse_events_and_logs_chat() -> None:
     chat_session = make_chat_session_model()
     fake_pipeline = FakePipeline()
@@ -560,6 +599,34 @@ def test_chat_stream_route_rejects_missing_session_before_pipeline_call() -> Non
     assert response.status_code == 404
     assert response.json() == {"detail": "chat session not found"}
     assert fake_chat_session_repository.get_calls == [(session_id, "tenant-a")]
+    assert fake_pipeline.requests == []
+    assert fake_chat_log_repository.inputs == []
+
+
+def test_chat_stream_route_rejects_archived_workspace_before_pipeline_call() -> None:
+    fake_pipeline = FakePipeline()
+    fake_chat_log_repository = FakeChatLogRepository()
+    fake_workspace_repository = FakeWorkspaceRepository(
+        archived_workspace_ids={"tenant-a"}
+    )
+    client = build_client(
+        fake_pipeline,
+        fake_chat_log_repository,
+        fake_workspace_repository=fake_workspace_repository,
+    )
+
+    response = client.post(
+        "/chat/stream",
+        headers={
+            **AUTH_HEADERS,
+            "X-Workspace-ID": "tenant-a",
+        },
+        json={"question": "What problem does FlashAttention solve?"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "workspace archived"}
+    assert fake_workspace_repository.get_calls == ["tenant-a"]
     assert fake_pipeline.requests == []
     assert fake_chat_log_repository.inputs == []
 

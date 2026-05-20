@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -81,14 +82,24 @@ class FakeChatLogRepository:
 
 
 class FakeWorkspaceRepository:
-    def __init__(self, workspace_ids: set[str] | None = None) -> None:
+    def __init__(
+        self,
+        workspace_ids: set[str] | None = None,
+        archived_workspace_ids: set[str] | None = None,
+    ) -> None:
         self.workspace_ids = workspace_ids or {"public", "tenant-a"}
+        self.archived_workspace_ids = archived_workspace_ids or set()
         self.get_calls: list[str] = []
 
     async def get_workspace(self, *, workspace_id: str):
         self.get_calls.append(workspace_id)
         if workspace_id in self.workspace_ids:
-            return object()
+            archived_at = (
+                datetime(2026, 5, 20, 8, 0, tzinfo=UTC)
+                if workspace_id in self.archived_workspace_ids
+                else None
+            )
+            return SimpleNamespace(id=workspace_id, archived_at=archived_at)
         return None
 
 
@@ -203,6 +214,31 @@ def test_create_chat_session_route_rejects_missing_workspace_before_create() -> 
     assert response.status_code == 404
     assert response.json() == {"detail": "workspace not found"}
     assert fake_workspace_repository.get_calls == ["tenant-missing"]
+    assert fake_repository.create_calls == []
+
+
+def test_create_chat_session_route_rejects_archived_workspace_before_create() -> None:
+    fake_repository = FakeChatSessionRepository()
+    fake_workspace_repository = FakeWorkspaceRepository(
+        archived_workspace_ids={"tenant-a"}
+    )
+    client = build_client(
+        fake_repository,
+        fake_workspace_repository=fake_workspace_repository,
+    )
+
+    response = client.post(
+        "/chat/sessions",
+        headers={
+            **AUTH_HEADERS,
+            "X-Workspace-ID": "tenant-a",
+        },
+        json={"title": "GPU systems questions"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "workspace archived"}
+    assert fake_workspace_repository.get_calls == ["tenant-a"]
     assert fake_repository.create_calls == []
 
 

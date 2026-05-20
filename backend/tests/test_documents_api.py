@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -127,14 +128,24 @@ class FakeDocumentRepository:
 
 
 class FakeWorkspaceRepository:
-    def __init__(self, workspace_ids: set[str] | None = None) -> None:
+    def __init__(
+        self,
+        workspace_ids: set[str] | None = None,
+        archived_workspace_ids: set[str] | None = None,
+    ) -> None:
         self.workspace_ids = workspace_ids or {"public", "tenant-a"}
+        self.archived_workspace_ids = archived_workspace_ids or set()
         self.get_calls: list[str] = []
 
     async def get_workspace(self, *, workspace_id: str):
         self.get_calls.append(workspace_id)
         if workspace_id in self.workspace_ids:
-            return object()
+            archived_at = (
+                datetime(2026, 5, 20, 8, 0, tzinfo=UTC)
+                if workspace_id in self.archived_workspace_ids
+                else None
+            )
+            return SimpleNamespace(id=workspace_id, archived_at=archived_at)
         return None
 
 
@@ -453,6 +464,38 @@ def test_create_document_route_rejects_missing_workspace_before_parsing() -> Non
     assert embedding_client.calls == []
 
 
+def test_create_document_route_rejects_archived_workspace_before_parsing() -> None:
+    fake_repository = FakeDocumentRepository()
+    embedding_client = RecordingEmbeddingClient()
+    fake_workspace_repository = FakeWorkspaceRepository(
+        archived_workspace_ids={"tenant-a"}
+    )
+    client = build_client(
+        fake_repository,
+        embedding_client,
+        fake_workspace_repository=fake_workspace_repository,
+    )
+
+    response = client.post(
+        "/documents",
+        headers={
+            **AUTH_HEADERS,
+            "X-Workspace-ID": "tenant-a",
+        },
+        json={
+            "source_uri": "uploads/flashattention.md",
+            "markdown": "# FlashAttention\n\nFlashAttention reduces HBM traffic.",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "workspace archived"}
+    assert fake_workspace_repository.get_calls == ["tenant-a"]
+    assert fake_repository.hash_calls == []
+    assert fake_repository.ingest_calls == []
+    assert embedding_client.calls == []
+
+
 def test_reindex_documents_route_runs_dry_run_by_default() -> None:
     reindex_runner = FakeReindexRunner(
         ReindexEmbeddingsStats(
@@ -570,6 +613,32 @@ def test_reindex_documents_route_rejects_invalid_options() -> None:
 
     assert batch_response.status_code == 422
     assert limit_response.status_code == 422
+    assert reindex_runner.calls == []
+
+
+def test_reindex_documents_route_rejects_archived_workspace_before_runner() -> None:
+    reindex_runner = FakeReindexRunner()
+    fake_workspace_repository = FakeWorkspaceRepository(
+        archived_workspace_ids={"tenant-a"}
+    )
+    client = build_client(
+        FakeDocumentRepository(),
+        reindex_runner=reindex_runner,
+        fake_workspace_repository=fake_workspace_repository,
+    )
+
+    response = client.post(
+        "/documents/reindex",
+        headers={
+            **AUTH_HEADERS,
+            "X-Workspace-ID": "tenant-a",
+        },
+        json={"dry_run": False},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "workspace archived"}
+    assert fake_workspace_repository.get_calls == ["tenant-a"]
     assert reindex_runner.calls == []
 
 
@@ -701,6 +770,32 @@ def test_delete_document_route_requires_api_key() -> None:
 
     assert response.status_code == 401
     assert response.json() == {"detail": "missing api key"}
+    assert fake_repository.delete_calls == []
+
+
+def test_delete_document_route_rejects_archived_workspace_before_delete() -> None:
+    document_id = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    fake_repository = FakeDocumentRepository()
+    fake_repository.delete_result = True
+    fake_workspace_repository = FakeWorkspaceRepository(
+        archived_workspace_ids={"tenant-a"}
+    )
+    client = build_client(
+        fake_repository,
+        fake_workspace_repository=fake_workspace_repository,
+    )
+
+    response = client.delete(
+        f"/documents/{document_id}",
+        headers={
+            **AUTH_HEADERS,
+            "X-Workspace-ID": "tenant-a",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "workspace archived"}
+    assert fake_workspace_repository.get_calls == ["tenant-a"]
     assert fake_repository.delete_calls == []
 
 
