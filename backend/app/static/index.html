@@ -222,7 +222,36 @@
           </form>
 
           <section class="admin-section" aria-label="Workspaces">
-            <h3>Workspaces</h3>
+            <div class="admin-section-heading">
+              <h3>Workspaces</h3>
+              <div
+                class="admin-workspace-filter-actions"
+                aria-label="Workspace status filter"
+              >
+                <button
+                  id="admin-workspace-filter-all"
+                  type="button"
+                  aria-pressed="true"
+                >
+                  All
+                </button>
+                <button
+                  id="admin-workspace-filter-active"
+                  type="button"
+                  aria-pressed="false"
+                >
+                  Active
+                </button>
+                <button
+                  id="admin-workspace-filter-archived"
+                  type="button"
+                  aria-pressed="false"
+                >
+                  Archived
+                </button>
+              </div>
+              <span id="admin-workspace-filter-summary">Showing 0 of 0</span>
+            </div>
             <form id="admin-workspace-form" class="admin-create-form">
               <label>
                 Workspace ID

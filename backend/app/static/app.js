@@ -9,6 +9,7 @@ const state = {
     logs: [],
     logLimit: 5,
     logOffset: 0,
+    workspaceFilter: "all",
     filters: {
       requestId: "",
       sessionId: "",
@@ -74,6 +75,16 @@ const els = {
   clearAdminFilters: document.querySelector("#clear-admin-filters"),
   exportAdminJsonl: document.querySelector("#export-admin-jsonl"),
   exportAdminCsv: document.querySelector("#export-admin-csv"),
+  adminWorkspaceFilterAll: document.querySelector("#admin-workspace-filter-all"),
+  adminWorkspaceFilterActive: document.querySelector(
+    "#admin-workspace-filter-active",
+  ),
+  adminWorkspaceFilterArchived: document.querySelector(
+    "#admin-workspace-filter-archived",
+  ),
+  adminWorkspaceFilterSummary: document.querySelector(
+    "#admin-workspace-filter-summary",
+  ),
   adminWorkspaceList: document.querySelector("#admin-workspace-list"),
   adminPrevLogs: document.querySelector("#admin-prev-logs"),
   adminNextLogs: document.querySelector("#admin-next-logs"),
@@ -166,6 +177,18 @@ function bindEvents() {
 
   els.restoreAdminWorkspace.addEventListener("click", () => {
     void restoreWorkspaceFromAdmin();
+  });
+
+  els.adminWorkspaceFilterAll.addEventListener("click", () => {
+    setAdminWorkspaceFilter("all");
+  });
+
+  els.adminWorkspaceFilterActive.addEventListener("click", () => {
+    setAdminWorkspaceFilter("active");
+  });
+
+  els.adminWorkspaceFilterArchived.addEventListener("click", () => {
+    setAdminWorkspaceFilter("archived");
   });
 
   els.adminFilterForm.addEventListener("submit", (event) => {
@@ -756,6 +779,7 @@ function renderDocuments() {
 function renderAdminOverview({ workspaceTotal, logTotal, logLimit, logOffset }) {
   els.adminWorkspaceCount.textContent = String(workspaceTotal);
   els.adminLogCount.textContent = String(logTotal);
+  renderAdminWorkspaceFilters();
   renderAdminWorkspaces();
   syncWorkspaceEditForm();
   syncWorkspaceWriteGuards();
@@ -775,17 +799,62 @@ function renderAdminPagination({ count, limit, offset }) {
   els.adminNextLogs.disabled = count < limit;
 }
 
+function setAdminWorkspaceFilter(filter) {
+  state.admin.workspaceFilter = filter;
+  renderAdminWorkspaceFilters();
+  renderAdminWorkspaces();
+}
+
+function renderAdminWorkspaceFilters() {
+  const filterButtons = {
+    all: els.adminWorkspaceFilterAll,
+    active: els.adminWorkspaceFilterActive,
+    archived: els.adminWorkspaceFilterArchived,
+  };
+  for (const [filter, button] of Object.entries(filterButtons)) {
+    button.setAttribute(
+      "aria-pressed",
+      String(state.admin.workspaceFilter === filter),
+    );
+  }
+}
+
+function filteredAdminWorkspaces() {
+  return state.admin.workspaces.filter((workspace) => {
+    const isArchived = Boolean(workspace.archived_at);
+    if (state.admin.workspaceFilter === "active") {
+      return !isArchived;
+    }
+    if (state.admin.workspaceFilter === "archived") {
+      return isArchived;
+    }
+    return true;
+  });
+}
+
+function workspaceFilterEmptyMessage() {
+  if (state.admin.workspaceFilter === "active") {
+    return "No active workspaces";
+  }
+  if (state.admin.workspaceFilter === "archived") {
+    return "No archived workspaces";
+  }
+  return "No accessible workspaces";
+}
+
 function renderAdminWorkspaces() {
   els.adminWorkspaceList.innerHTML = "";
-  if (!state.admin.workspaces.length) {
+  const workspaces = filteredAdminWorkspaces();
+  els.adminWorkspaceFilterSummary.textContent = `Showing ${workspaces.length} of ${state.admin.workspaces.length}`;
+  if (!workspaces.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent = "No accessible workspaces";
+    empty.textContent = workspaceFilterEmptyMessage();
     els.adminWorkspaceList.append(empty);
     return;
   }
 
-  for (const workspace of state.admin.workspaces) {
+  for (const workspace of workspaces) {
     const isArchived = Boolean(workspace.archived_at);
     const item = document.createElement("button");
     item.type = "button";

@@ -29,8 +29,8 @@ real provider key is available.
 - Deterministic eval gate with JSONL datasets and trend recording.
 - Minimal web UI at `/app/` with sessions, history, SSE chat, document upload,
   reindex actions, workspace creation, editing, archive/restore actions, admin
-  overview, archived-workspace read-only guards, audit filters, audit export,
-  audit details, and chat error recovery.
+  overview, workspace status filters, archived-workspace read-only guards, audit
+  filters, audit export, audit details, and chat error recovery.
 - Dockerfile, production-style Compose stack, deployment runbook, and CI
   workflow.
 

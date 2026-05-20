@@ -94,7 +94,7 @@ docs/EVAL_TRENDS.md
 - 基础 rate limit 中间件：默认关闭，可按 API key 哈希或客户端 IP 限流
 - HTTP 请求指标、RAG refusal 指标、无效 citation 指标、provider token/latency/cost 指标
 - OpenAI provider 错误会映射为结构化 API 错误、日志和 metrics
-- Web UI：`GET /app/`，支持 session、history、SSE streaming chat、文档上传、reindex、workspace 创建、编辑、归档、恢复、归档 workspace 写入控件禁用、只读 admin overview、chat log audit filters、chat log audit export 和 chat log audit details
+- Web UI：`GET /app/`，支持 session、history、SSE streaming chat、文档上传、reindex、workspace 创建、编辑、归档、恢复、workspace 状态过滤、归档 workspace 写入控件禁用、只读 admin overview、chat log audit filters、chat log audit export 和 chat log audit details
 
 ### 数据库与迁移
 
@@ -521,6 +521,7 @@ http://127.0.0.1:8000/app/
 - 调用 `POST /workspaces` 创建 workspace，并在成功后切换当前 workspace
 - 调用 `PATCH /workspaces/{workspace_id}` 更新当前 workspace 的 name、description 和 metadata
 - 调用 `POST /workspaces/{workspace_id}/archive` 和 `POST /workspaces/{workspace_id}/restore` 归档或恢复当前 workspace
+- 在 workspace 列表中按 All / Active / Archived 过滤可访问 workspace
 - 当前 workspace 已归档时，页面会显示只读提示，并禁用 chat、session 创建、document upload 和 reindex 写入控件
 - 查看可访问 workspace 列表和当前 workspace 最近 chat logs
 - 按 request id、session id、refusal only、citation valid/invalid 过滤当前 workspace 的 chat logs，并用 Previous/Next 做基础翻页
@@ -1217,6 +1218,7 @@ Completed: 2026-05-20T09:51:56Z
 - workspace 编辑基础版已完成：`PATCH /workspaces/{workspace_id}` 可更新 name、description、metadata，Admin overview 可编辑当前 workspace。
 - workspace 归档/恢复 UI 基础版已完成：Admin overview 可展示归档状态，并调用 archive/restore API 更新当前 workspace。
 - workspace 归档状态 UX guard 已完成：当前 workspace 已归档时，Web UI 会显示只读提示，并禁用 chat、session 创建、document upload 和 reindex 写入控件。
+- workspace 列表状态过滤已完成：Admin overview 支持 All / Active / Archived 过滤。
 - chat log 审计过滤基础版已完成：`GET /chat/logs` 支持 `offset`、`session_id`、`request_id`、`refusal_only`、`citation_valid`，Admin overview 支持对应筛选和 Previous/Next 翻页。
 - chat log 审计导出基础版已完成：`GET /chat/logs/export` 支持同一组过滤参数，可导出 JSONL 或 CSV，Admin overview 可按当前过滤条件触发下载。
 - chat log 审计详情基础版已完成：每条最近日志可展开查看 session、request、citation、sources、refusal、retrieval、query rewrite、metadata filter、usage 和 cost。
@@ -1330,20 +1332,21 @@ OPENAI_API_KEY
 15. workspace 归档/恢复 UI。已完成。
 16. workspace 归档写保护。已完成。
 17. workspace 归档状态前端写入禁用。已完成。
+18. workspace 列表状态过滤。已完成。
 
 ## 14. 当前优先级建议
 
 建议下一步优先做：
 
 ```text
-workspace archived-state list filters
+workspace admin pagination or search
 ```
 
 原因：
 
-- workspace 归档/恢复 API、Admin UI、后端写保护和前端写入禁用已完成。
-- 当前归档 workspace 仍会出现在 workspace 列表里，便于审计和恢复。
-- 下一步可以增加 workspace 列表过滤：All / Active / Archived，减少多租户场景下归档 workspace 对日常管理的干扰。
+- workspace 归档/恢复 API、Admin UI、后端写保护、前端写入禁用和状态过滤已完成。
+- 当前 workspace 列表仍只拉取前 20 个可访问 workspace。
+- 下一步可以增加 workspace 列表分页或搜索，避免多租户数量增长后管理视图不够用。
 
 以下命令是后续需要真实 provider 时的验证入口：
 

@@ -28,6 +28,10 @@ def test_static_app_serves_index_html() -> None:
     assert 'id="admin-workspace-form"' in response.text
     assert 'id="admin-workspace-id"' in response.text
     assert 'id="create-admin-workspace"' in response.text
+    assert 'id="admin-workspace-filter-all"' in response.text
+    assert 'id="admin-workspace-filter-active"' in response.text
+    assert 'id="admin-workspace-filter-archived"' in response.text
+    assert 'id="admin-workspace-filter-summary"' in response.text
     assert 'id="admin-workspace-edit-form"' in response.text
     assert 'id="admin-edit-workspace-metadata"' in response.text
     assert 'id="admin-archive-workspace-reason"' in response.text
@@ -59,6 +63,9 @@ def test_static_app_serves_assets() -> None:
     assert "archiveWorkspaceFromAdmin" in script_response.text
     assert "restoreWorkspaceFromAdmin" in script_response.text
     assert "workspaceLifecycleText" in script_response.text
+    assert "setAdminWorkspaceFilter" in script_response.text
+    assert "filteredAdminWorkspaces" in script_response.text
+    assert "workspaceFilterEmptyMessage" in script_response.text
     assert "isCurrentWorkspaceArchived" in script_response.text
     assert "syncWorkspaceWriteGuards" in script_response.text
     assert "guardArchivedWorkspace" in script_response.text
@@ -87,6 +94,7 @@ def test_static_app_serves_assets() -> None:
     assert ".knowledge-panel" in style_response.text
     assert ".workspace-archive-banner" in style_response.text
     assert ".admin-panel" in style_response.text
+    assert ".admin-workspace-filter-actions" in style_response.text
     assert ".admin-create-form" in style_response.text
     assert ".admin-edit-form" in style_response.text
     assert ".admin-workspace-actions" in style_response.text
