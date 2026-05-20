@@ -12,3 +12,4 @@ build/
 *.egg-info/
 evals/reports/*.json
 evals/reports/*.jsonl
+exports/

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     api_key_workspace_access: str = ""
     database_url: str = "postgresql+asyncpg://rag:rag@localhost:5432/rag"
     sync_database_url: str = "postgresql+psycopg://rag:rag@localhost:5432/rag"
+    export_storage_dir: str = "exports"
     embedding_provider: Literal["fake", "openai"] = "fake"
     embedding_model: str = "fake-embedding"
     embedding_dimension: int = 1536

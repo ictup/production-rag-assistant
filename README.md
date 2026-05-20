@@ -275,10 +275,11 @@ The `/app/` Admin overview also exposes these records with action, workspace
 ID, request ID, and time-range filters.
 
 Asynchronous export groundwork is represented by the `export_jobs` table,
-`ExportJobRepository`, and `/exports/jobs` API. Jobs start as `pending`, can be
-claimed by a worker as `running`, and then finish as `succeeded` or `failed`.
-The existing `/chat/logs/export` route remains synchronous until the worker and
-download steps are wired in.
+`ExportJobRepository`, `/exports/jobs` API, and export worker. Jobs start as
+`pending`, can be claimed by a worker as `running`, and then finish as
+`succeeded` or `failed`. Worker output is written under `EXPORT_STORAGE_DIR`.
+The existing `/chat/logs/export` route remains synchronous until the download
+and UI steps are wired in.
 
 Create and inspect an export job:
 
@@ -292,6 +293,12 @@ curl.exe -X POST http://127.0.0.1:8000/exports/jobs `
 curl.exe "http://127.0.0.1:8000/exports/jobs?status=pending&export_type=chat_logs" `
   -H "Authorization: Bearer dev-key" `
   -H "X-Workspace-ID: public"
+```
+
+Run one worker pass:
+
+```powershell
+uv run python -m backend.app.exporting.worker
 ```
 
 Archived workspaces remain readable for audit and recovery, but write-oriented

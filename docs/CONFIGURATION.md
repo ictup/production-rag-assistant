@@ -123,6 +123,7 @@ contextualized before retrieval.
 | `API_PORT` | `8000` | No | Host port published by production compose for the API service. |
 | `DATABASE_URL` | local asyncpg URL | Yes | Async SQLAlchemy database URL for the API. |
 | `SYNC_DATABASE_URL` | local psycopg URL | Yes | Sync database URL for Alembic migrations. |
+| `EXPORT_STORAGE_DIR` | `exports` | No | Directory where export worker output files are written. Relative paths resolve from the process working directory. Use a mounted persistent volume in production-style deployments. |
 
 ### Embeddings
 

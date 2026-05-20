@@ -104,7 +104,7 @@ docs/EVAL_TRENDS.md
 - 基础 rate limit 中间件：默认关闭，可按 API key 哈希或客户端 IP 限流
 - HTTP 请求指标、RAG refusal 指标、无效 citation 指标、provider token/latency/cost 指标
 - OpenAI provider 错误会映射为结构化 API 错误、日志和 metrics
-- 异步导出 job 基础模型与 API：`export_jobs` 表和 `ExportJobRepository` 已支持 pending/running/succeeded/failed 状态流转，`/exports/jobs` 已支持创建、列表和详情查询
+- 异步导出 job 基础模型、API 与 worker：`export_jobs` 表和 `ExportJobRepository` 已支持 pending/running/succeeded/failed 状态流转，`/exports/jobs` 已支持创建、列表和详情查询，`python -m backend.app.exporting.worker` 可执行一个 pending chat log 导出任务并落地 JSONL/CSV 文件
 - Web UI：`GET /app/`，支持 session、history、SSE streaming chat、文档上传、reindex、workspace 创建、编辑、归档、恢复、workspace 搜索、分页、状态过滤、当前页批量归档/恢复和跨页匹配批量预览/确认、归档 workspace 写入控件禁用、只读 admin overview、chat log audit filters、chat log audit export、chat log audit details、workspace operation audit filters 和 workspace operation audit details
 
 ### 数据库与迁移
@@ -1288,8 +1288,9 @@ Completed: 2026-05-20T09:51:56Z
 - chat log 审计导出基础版已完成：`GET /chat/logs/export` 支持同一组过滤参数，可导出 JSONL 或 CSV，Admin overview 可按当前过滤条件触发下载。
 - chat log 审计详情基础版已完成：每条最近日志可展开查看 session、request、citation、sources、refusal、retrieval、query rewrite、metadata filter、usage 和 cost。
 - export job 基础模型已完成：新增 `export_jobs` 表、`ExportJobRepository`、pending -> running -> succeeded/failed 状态流转和 worker claim 入口。
-- export job API 已完成：`POST /exports/jobs` 可按当前 `X-Workspace-ID` 创建 chat log 导出任务，`GET /exports/jobs` 支持 status/export_type 分页查询，`GET /exports/jobs/{job_id}` 可按 workspace 读取任务详情；现有 `/chat/logs/export` 仍保持同步，等待下一步接入 worker 和文件生成。
-- 完整管理后台仍未完成：还缺少用户/角色/组织管理、导出任务执行/大文件存储、更完整的批量运维操作和权限分层 UI。
+- export job API 已完成：`POST /exports/jobs` 可按当前 `X-Workspace-ID` 创建 chat log 导出任务，`GET /exports/jobs` 支持 status/export_type 分页查询，`GET /exports/jobs/{job_id}` 可按 workspace 读取任务详情；现有 `/chat/logs/export` 仍保持同步。
+- export worker 基础版已完成：`backend.app.exporting.worker` 会 claim 一个 pending job，按 filters 查询 chat logs，复用同步导出的 JSONL/CSV 序列化，写入 `EXPORT_STORAGE_DIR`，并将 job 标记为 succeeded/failed。
+- 完整管理后台仍未完成：还缺少用户/角色/组织管理、导出任务下载 API/前端轮询、更完整的批量运维操作和权限分层 UI。
 
 ### 生产部署
 
@@ -1413,19 +1414,20 @@ OPENAI_API_KEY
 29. workspace 操作审计 UI。已完成。
 30. 导出任务异步化：job 表和后台执行模型。已完成。
 31. 导出任务异步化：创建/查询 job API。已完成。
+32. 导出任务异步化：worker 执行和文件落地。已完成。
 
 ## 14. 当前优先级建议
 
 建议下一步优先做：
 
 ```text
-导出任务异步化：worker 执行和文件落地
+导出任务异步化：下载接口和前端轮询
 ```
 
 原因：
 
-- export job 表、迁移、repository、状态流转和创建/查询 API 已完成。
-- 下一步可以实现后台执行器：claim pending job，读取 chat log 过滤条件，生成 JSONL/CSV 文件，写入本地或配置化存储路径，最后把 job 标记为 succeeded/failed。
+- export job 表、迁移、repository、状态流转、创建/查询 API、worker 执行和文件落地已完成。
+- 下一步可以新增下载接口和前端轮询：前端创建 job 后轮询 status，job succeeded 后通过安全下载接口取回 `result_uri` 对应文件。
 
 以下命令是后续需要真实 provider 时的验证入口：
 
