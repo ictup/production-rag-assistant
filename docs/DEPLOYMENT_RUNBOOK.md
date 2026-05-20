@@ -5,7 +5,8 @@ production-style local stack. Configuration details live in
 `docs/CONFIGURATION.md`. Metrics, dashboard, and alert templates live in
 `docs/OBSERVABILITY.md`. Postgres slow query monitoring lives in
 `docs/DATABASE_OBSERVABILITY.md`. Production secret manager mapping lives in
-`docs/SECRET_MANAGER_MAPPING.md`.
+`docs/SECRET_MANAGER_MAPPING.md`. Release gating lives in
+`docs/RELEASE_CHECKLIST.md`.
 
 ## Scope
 
@@ -328,11 +329,18 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 ## Final Pre-Release Check
 
-Before promoting a change, run:
+Before promoting a change, run the full release checklist:
+
+```text
+docs/RELEASE_CHECKLIST.md
+```
+
+At minimum, run:
 
 ```powershell
 uv run pytest
 uv run ruff check .
+uv run python -m backend.app.core.config_check --production
 uv run python -m evals.run --format summary --fail-on-failure --no-output
 docker compose -f docker-compose.prod.yml config --quiet
 ```

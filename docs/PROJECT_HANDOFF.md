@@ -40,6 +40,12 @@ docs/DEPLOYMENT_RUNBOOK.md
 docs/SECRET_MANAGER_MAPPING.md
 ```
 
+当前 release checklist：
+
+```text
+docs/RELEASE_CHECKLIST.md
+```
+
 当前可观测性文档：
 
 ```text
@@ -290,6 +296,12 @@ uv run python -m backend.app.core.config_check --production
 
 ```text
 docs/DEPLOYMENT_RUNBOOK.md
+```
+
+最终发布门禁见：
+
+```text
+docs/RELEASE_CHECKLIST.md
 ```
 
 指标、dashboard 和 alert 模板见：
@@ -952,7 +964,7 @@ uv run pytest
 当前最近一次本地通过结果：
 
 ```text
-593 passed
+597 passed
 ```
 
 ### Pipeline Smoke
@@ -1373,6 +1385,7 @@ Completed: 2026-05-20T09:51:56Z
 - API key 角色分层基础版已完成：`API_KEY_ROLES` 支持 `admin`、`operator`、`viewer`，并保护 workspace 管理、文档写入、chat/session 写入和 export job 写入路径。
 - 更完整的用户/角色/组织模型。
 - secret manager 基础映射文档已完成；真实部署时仍需要把对应变量填入目标平台的 secret/config UI 或 CLI。
+- release checklist 已完成：`docs/RELEASE_CHECKLIST.md` 覆盖本地验证、生产配置门禁、secret scan、CI gate、dry run、tag、release notes 和 rollback readiness。
 
 ### 可观测性
 
@@ -1493,19 +1506,20 @@ OPENAI_API_KEY
 39. 生产配置和 secrets 收紧：配置预检 CLI。已完成。
 40. 生产部署平台 secrets 接入说明。已完成。
 41. 管理后台权限分层基础版：API key roles。已完成。
+42. 最终 release 收口：release checklist。已完成。
 
 ## 14. 当前优先级建议
 
 建议下一步优先做：
 
 ```text
-最终 release 收口
+正式创建 release tag 和 release notes
 ```
 
 原因：
 
-- export job 表、迁移、repository、状态流转、创建/查询 API、worker 执行、文件落地、下载接口、前端轮询、常驻 worker、production compose 编排、running 超时恢复、过期文件清理、失败任务手动重试、真实 OpenAI 端到端验证、配置预检 CLI、secret manager 映射文档和 API key 角色分层基础版已完成。
-- 下一步可以做最终 release 收口：全量验证、CI 状态确认、文档最终审读、tag/release note。
+- export job 表、迁移、repository、状态流转、创建/查询 API、worker 执行、文件落地、下载接口、前端轮询、常驻 worker、production compose 编排、running 超时恢复、过期文件清理、失败任务手动重试、真实 OpenAI 端到端验证、配置预检 CLI、secret manager 映射文档、API key 角色分层基础版和 release checklist 已完成。
+- 下一步可以在你确认版本号后创建正式 release tag 和 release notes。
 
 以下命令是后续需要真实 provider 时的验证入口：
 

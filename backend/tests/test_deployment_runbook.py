@@ -54,6 +54,13 @@ def test_deployment_runbook_is_linked_from_entry_documents() -> None:
     assert expected_link in CONFIGURATION_PATH.read_text(encoding="utf-8")
 
 
+def test_deployment_runbook_links_release_checklist() -> None:
+    runbook = RUNBOOK_PATH.read_text(encoding="utf-8")
+
+    assert "docs/RELEASE_CHECKLIST.md" in runbook
+    assert "uv run python -m backend.app.core.config_check --production" in runbook
+
+
 def test_deployment_runbook_points_to_secret_manager_mapping() -> None:
     runbook = RUNBOOK_PATH.read_text(encoding="utf-8")
 

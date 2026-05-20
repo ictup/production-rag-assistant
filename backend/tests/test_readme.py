@@ -46,6 +46,7 @@ def test_readme_documents_core_commands_and_links() -> None:
         "docs/CONFIGURATION.md",
         "docs/SECRET_MANAGER_MAPPING.md",
         "docs/DEPLOYMENT_RUNBOOK.md",
+        "docs/RELEASE_CHECKLIST.md",
         "docs/OBSERVABILITY.md",
         "docs/DATABASE_OBSERVABILITY.md",
         "docs/EVAL_TRENDS.md",
