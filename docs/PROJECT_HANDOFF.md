@@ -101,6 +101,7 @@ docs/EVAL_TRENDS.md
 - 基础 rate limit 中间件：默认关闭，可按 API key 哈希或客户端 IP 限流
 - HTTP 请求指标、RAG refusal 指标、无效 citation 指标、provider token/latency/cost 指标
 - OpenAI provider 错误会映射为结构化 API 错误、日志和 metrics
+- 异步导出 job 基础模型：`export_jobs` 表和 `ExportJobRepository` 已支持 pending/running/succeeded/failed 状态流转
 - Web UI：`GET /app/`，支持 session、history、SSE streaming chat、文档上传、reindex、workspace 创建、编辑、归档、恢复、workspace 搜索、分页、状态过滤、当前页批量归档/恢复和跨页匹配批量预览/确认、归档 workspace 写入控件禁用、只读 admin overview、chat log audit filters、chat log audit export、chat log audit details、workspace operation audit filters 和 workspace operation audit details
 
 ### 数据库与迁移
@@ -116,12 +117,14 @@ docs/EVAL_TRENDS.md
   - `0007_add_workspace_foreign_keys.py`
   - `0008_add_workspace_archive_fields.py`
   - `0009_create_workspace_audit_logs.py`
+  - `0010_create_export_jobs.py`
 - 文档表、chunk 表、chat session 表、chat log 表
 - workspace 表，包含 `archived_at` 和 `archived_reason` 软归档字段
 - workspace 操作审计表 `workspace_audit_logs`，记录 request id、API key hash、action、workspace ids 和操作 metadata
+- 异步导出任务表 `export_jobs`，记录 workspace、request id、actor hash、export type、format、filters、status、结果 URI、错误信息和生命周期时间戳
 - `pg_stat_statements` 扩展和 Compose 慢查询日志配置
 - async SQLAlchemy session
-- repository 层封装文档 ingest 和聊天日志写入/查询
+- repository 层封装文档 ingest、聊天日志写入/查询和 export job 状态流转
 
 ### Ingestion
 
@@ -1281,7 +1284,8 @@ Completed: 2026-05-20T09:51:56Z
 - chat log 审计过滤基础版已完成：`GET /chat/logs` 支持 `offset`、`session_id`、`request_id`、`refusal_only`、`citation_valid`，Admin overview 支持对应筛选和 Previous/Next 翻页。
 - chat log 审计导出基础版已完成：`GET /chat/logs/export` 支持同一组过滤参数，可导出 JSONL 或 CSV，Admin overview 可按当前过滤条件触发下载。
 - chat log 审计详情基础版已完成：每条最近日志可展开查看 session、request、citation、sources、refusal、retrieval、query rewrite、metadata filter、usage 和 cost。
-- 完整管理后台仍未完成：还缺少用户/角色/组织管理、导出任务异步化/大文件存储、更完整的批量运维操作和权限分层 UI。
+- export job 基础模型已完成：新增 `export_jobs` 表、`ExportJobRepository`、pending -> running -> succeeded/failed 状态流转和 worker claim 入口；现有 `/chat/logs/export` 仍保持同步，等待下一步接入 job API。
+- 完整管理后台仍未完成：还缺少用户/角色/组织管理、导出任务 API/大文件存储、更完整的批量运维操作和权限分层 UI。
 
 ### 生产部署
 
@@ -1403,19 +1407,20 @@ OPENAI_API_KEY
 27. workspace 批量操作审计记录。已完成。
 28. workspace 操作审计查询 API。已完成。
 29. workspace 操作审计 UI。已完成。
+30. 导出任务异步化：job 表和后台执行模型。已完成。
 
 ## 14. 当前优先级建议
 
 建议下一步优先做：
 
 ```text
-导出任务异步化：job 表和后台执行模型
+导出任务异步化：创建/查询 job API
 ```
 
 原因：
 
-- workspace 归档/恢复 API、后端写保护、前端写入禁用、状态过滤、分页、搜索、后端状态过滤、批量操作 API、当前页批量操作 UI、跨页批量预览 API、跨页批量确认执行 API、跨页 UI 确认流、操作审计写入、审计查询 API 和审计 UI 已完成。
-- 下一步可以把同步导出升级为异步 job：先建立 export job 数据模型、状态流转和后台执行入口，为后续大文件存储、重试和下载链接打基础。
+- export job 表、迁移、repository 和状态流转已完成。
+- 下一步可以新增创建/查询导出 job 的 API，把 chat log 导出请求从同步下载入口旁路到 job 创建入口，并返回 job id/status，后续再接文件生成、下载和前端轮询。
 
 以下命令是后续需要真实 provider 时的验证入口：
 

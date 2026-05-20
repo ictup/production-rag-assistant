@@ -15,7 +15,8 @@ real provider key is available.
   health, and metrics.
 - Workspace management API with create, update, list, detail, soft archive,
   bulk archive, restore, bulk restore operations, and operation audit logging.
-- Postgres + pgvector schema with Alembic migrations.
+- Postgres + pgvector schema with Alembic migrations, including an export job
+  foundation for asynchronous downloads.
 - Markdown ingestion, chunking, content hashing, fake embeddings, OpenAI
   embeddings, and reindexing.
 - Hybrid retrieval with vector search, sparse search, metadata filters, RRF
@@ -272,6 +273,12 @@ curl.exe "http://127.0.0.1:8000/workspaces/audit-logs?action=archive&workspace_i
 
 The `/app/` Admin overview also exposes these records with action, workspace
 ID, request ID, and time-range filters.
+
+Asynchronous export groundwork is represented by the `export_jobs` table and
+`ExportJobRepository`. Jobs start as `pending`, can be claimed by a worker as
+`running`, and then finish as `succeeded` or `failed`. The existing
+`/chat/logs/export` route remains synchronous until the next API step wires
+chat log exports into this job model.
 
 Archived workspaces remain readable for audit and recovery, but write-oriented
 operations return `409 workspace archived`. This includes chat, streaming chat,

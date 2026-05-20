@@ -13,6 +13,7 @@ from backend.app.db.models import (
     ChatSession,
     Document,
     DocumentChunk,
+    ExportJob,
     Workspace,
     WorkspaceAuditLog,
 )
@@ -99,6 +100,16 @@ class CreateWorkspaceAuditLogInput:
 
 
 @dataclass(frozen=True)
+class CreateExportJobInput:
+    request_id: str
+    actor_hash: str
+    workspace_id: str
+    export_type: str
+    format: str
+    filters: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
 class CreateWorkspaceResult:
     workspace: Workspace
     created: bool
@@ -120,6 +131,12 @@ class WorkspaceListResult:
 class WorkspaceAuditLogListResult:
     total: int
     audit_logs: list[WorkspaceAuditLog]
+
+
+@dataclass(frozen=True)
+class ExportJobListResult:
+    total: int
+    jobs: list[ExportJob]
 
 
 @dataclass(frozen=True)
@@ -169,6 +186,13 @@ def normalize_optional_text(value: str | None) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+def require_text(value: str | None, field_name: str) -> str:
+    normalized = normalize_optional_text(value)
+    if normalized is None:
+        raise ValueError(f"{field_name} must not be blank")
+    return normalized
 
 
 class WorkspaceRepository:
@@ -527,6 +551,201 @@ class WorkspaceRepository:
             total=int(total or 0),
             audit_logs=audit_logs,
         )
+
+
+class ExportJobRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def create_export_job(
+        self,
+        export_input: CreateExportJobInput,
+        *,
+        commit: bool = False,
+    ) -> ExportJob:
+        request_id = require_text(export_input.request_id, "request_id")
+        actor_hash = require_text(export_input.actor_hash, "actor_hash")
+        workspace_id = require_text(export_input.workspace_id, "workspace_id")
+        export_type = require_text(export_input.export_type, "export_type")
+        export_format = require_text(export_input.format, "format")
+
+        export_job = ExportJob(
+            id=uuid.uuid4(),
+            workspace_id=workspace_id,
+            request_id=request_id,
+            actor_hash=actor_hash,
+            export_type=export_type,
+            format=export_format,
+            status="pending",
+            filters_=dict(export_input.filters or {}),
+        )
+        self.session.add(export_job)
+        await self.session.flush()
+        if commit:
+            await self.session.commit()
+        return export_job
+
+    async def get_export_job(
+        self,
+        *,
+        job_id: uuid.UUID,
+        workspace_id: str | None = None,
+    ) -> ExportJob | None:
+        filters = [ExportJob.id == job_id]
+        normalized_workspace_id = normalize_optional_text(workspace_id)
+        if normalized_workspace_id is not None:
+            filters.append(ExportJob.workspace_id == normalized_workspace_id)
+
+        statement = select(ExportJob).where(*filters)
+        return await self.session.scalar(statement)
+
+    async def list_export_jobs(
+        self,
+        *,
+        workspace_id: str,
+        limit: int = 20,
+        offset: int = 0,
+        status: str | None = None,
+        export_type: str | None = None,
+    ) -> ExportJobListResult:
+        if limit <= 0:
+            raise ValueError("limit must be greater than zero")
+        if offset < 0:
+            raise ValueError("offset must not be negative")
+
+        filters = [ExportJob.workspace_id == require_text(workspace_id, "workspace_id")]
+        normalized_status = normalize_optional_text(status)
+        if normalized_status is not None:
+            filters.append(ExportJob.status == normalized_status)
+        normalized_export_type = normalize_optional_text(export_type)
+        if normalized_export_type is not None:
+            filters.append(ExportJob.export_type == normalized_export_type)
+
+        total_statement = select(func.count()).select_from(ExportJob).where(*filters)
+        total = await self.session.scalar(total_statement)
+        statement = (
+            select(ExportJob)
+            .where(*filters)
+            .order_by(ExportJob.created_at.desc(), ExportJob.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        jobs = list((await self.session.scalars(statement)).all())
+        return ExportJobListResult(total=int(total or 0), jobs=jobs)
+
+    async def claim_next_pending_export_job(
+        self,
+        *,
+        workspace_id: str | None = None,
+        commit: bool = False,
+    ) -> ExportJob | None:
+        filters = [ExportJob.status == "pending"]
+        normalized_workspace_id = normalize_optional_text(workspace_id)
+        if normalized_workspace_id is not None:
+            filters.append(ExportJob.workspace_id == normalized_workspace_id)
+
+        statement = (
+            select(ExportJob)
+            .where(*filters)
+            .order_by(ExportJob.created_at.asc(), ExportJob.id.asc())
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+        export_job = await self.session.scalar(statement)
+        if export_job is None:
+            return None
+        await self.mark_export_job_running(export_job=export_job, commit=commit)
+        return export_job
+
+    async def mark_export_job_running(
+        self,
+        *,
+        job_id: uuid.UUID | None = None,
+        export_job: ExportJob | None = None,
+        commit: bool = False,
+    ) -> ExportJob | None:
+        job = export_job or await self._load_export_job(job_id)
+        if job is None:
+            return None
+        if job.status != "pending":
+            raise ValueError("export job must be pending to start")
+
+        now = datetime.now(UTC)
+        job.status = "running"
+        job.started_at = now
+        job.completed_at = None
+        job.error_message = None
+        job.updated_at = now
+        await self.session.flush()
+        if commit:
+            await self.session.commit()
+        return job
+
+    async def complete_export_job(
+        self,
+        *,
+        job_id: uuid.UUID,
+        result_uri: str,
+        result_media_type: str,
+        result_size_bytes: int | None = None,
+        commit: bool = False,
+    ) -> ExportJob | None:
+        job = await self._load_export_job(job_id)
+        if job is None:
+            return None
+        if job.status != "running":
+            raise ValueError("export job must be running to complete")
+
+        normalized_result_uri = require_text(result_uri, "result_uri")
+        normalized_media_type = require_text(result_media_type, "result_media_type")
+        if result_size_bytes is not None and result_size_bytes < 0:
+            raise ValueError("result_size_bytes must not be negative")
+
+        now = datetime.now(UTC)
+        job.status = "succeeded"
+        job.result_uri = normalized_result_uri
+        job.result_media_type = normalized_media_type
+        job.result_size_bytes = result_size_bytes
+        job.error_message = None
+        job.completed_at = now
+        job.updated_at = now
+        await self.session.flush()
+        if commit:
+            await self.session.commit()
+        return job
+
+    async def fail_export_job(
+        self,
+        *,
+        job_id: uuid.UUID,
+        error_message: str,
+        commit: bool = False,
+    ) -> ExportJob | None:
+        job = await self._load_export_job(job_id)
+        if job is None:
+            return None
+        if job.status not in {"pending", "running"}:
+            raise ValueError("export job must be pending or running to fail")
+
+        now = datetime.now(UTC)
+        job.status = "failed"
+        job.error_message = require_text(error_message, "error_message")
+        job.result_uri = None
+        job.result_media_type = None
+        job.result_size_bytes = None
+        job.completed_at = now
+        if job.started_at is None:
+            job.started_at = now
+        job.updated_at = now
+        await self.session.flush()
+        if commit:
+            await self.session.commit()
+        return job
+
+    async def _load_export_job(self, job_id: uuid.UUID | None) -> ExportJob | None:
+        if job_id is None:
+            raise ValueError("job_id is required")
+        return await self.get_export_job(job_id=job_id)
 
 
 class DocumentRepository:

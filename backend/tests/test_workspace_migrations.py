@@ -11,6 +11,9 @@ ARCHIVE_MIGRATION_PATH = Path(
 AUDIT_MIGRATION_PATH = Path(
     "backend/app/db/migrations/versions/0009_create_workspace_audit_logs.py"
 )
+EXPORT_JOB_MIGRATION_PATH = Path(
+    "backend/app/db/migrations/versions/0010_create_export_jobs.py"
+)
 
 
 def test_workspace_foreign_key_migration_backfills_existing_workspace_ids() -> None:
@@ -63,6 +66,29 @@ def test_workspace_audit_migration_adds_operation_log_table() -> None:
     assert "workspace_audit_logs_request_id_idx" in migration
     assert "workspace_audit_logs_workspace_ids_idx" in migration
     assert 'postgresql_using="gin"' in migration
+
+
+def test_export_job_migration_adds_async_export_table() -> None:
+    migration = EXPORT_JOB_MIGRATION_PATH.read_text(encoding="utf-8")
+
+    assert 'revision: str = "0010_export_jobs"' in migration
+    assert 'down_revision: str | None = "0009_workspace_audit_logs"' in migration
+    assert '"export_jobs"' in migration
+    assert '"workspace_id"' in migration
+    assert '"request_id"' in migration
+    assert '"actor_hash"' in migration
+    assert '"export_type"' in migration
+    assert '"format"' in migration
+    assert '"status"' in migration
+    assert '"filters"' in migration
+    assert '"result_uri"' in migration
+    assert '"error_message"' in migration
+    assert "export_jobs_status_check" in migration
+    assert "export_jobs_workspace_created_at_idx" in migration
+    assert "export_jobs_status_created_at_idx" in migration
+    assert "export_jobs_request_id_idx" in migration
+    assert 'ondelete="RESTRICT"' in migration
+    assert 'onupdate="CASCADE"' in migration
 
 
 def test_alembic_revision_ids_fit_current_version_column() -> None:

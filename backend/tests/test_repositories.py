@@ -9,6 +9,7 @@ from backend.app.db.models import (
     ChatSession,
     Document,
     DocumentChunk,
+    ExportJob,
     Workspace,
     WorkspaceAuditLog,
 )
@@ -18,9 +19,11 @@ from backend.app.db.repositories import (
     ChatSessionRepository,
     CreateChatLogInput,
     CreateChatSessionInput,
+    CreateExportJobInput,
     CreateWorkspaceAuditLogInput,
     CreateWorkspaceInput,
     DocumentRepository,
+    ExportJobRepository,
     UpdateWorkspaceInput,
     WorkspaceRepository,
 )
@@ -194,6 +197,27 @@ def make_workspace_audit_log_model() -> WorkspaceAuditLog:
         workspace_count=2,
         metadata_={"mode": "explicit_ids"},
         created_at=datetime(2026, 5, 20, 8, 0, tzinfo=UTC),
+    )
+
+
+def make_export_job_model(*, status: str = "pending") -> ExportJob:
+    return ExportJob(
+        id=uuid.UUID("55555555-5555-5555-5555-555555555555"),
+        workspace_id="tenant-a",
+        request_id="request-1",
+        actor_hash="a" * 64,
+        export_type="chat_logs",
+        format="jsonl",
+        status=status,
+        filters_={"limit": 1000},
+        result_uri=None,
+        result_media_type=None,
+        result_size_bytes=None,
+        error_message=None,
+        created_at=datetime(2026, 5, 20, 8, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 5, 20, 8, 0, tzinfo=UTC),
+        started_at=None,
+        completed_at=None,
     )
 
 
@@ -694,6 +718,171 @@ async def test_list_workspace_audit_logs_rejects_invalid_pagination() -> None:
 
     with pytest.raises(ValueError, match="offset"):
         await repository.list_workspace_audit_logs(offset=-1)
+
+
+@pytest.mark.asyncio
+async def test_create_export_job_adds_pending_job_model() -> None:
+    session = FakeAsyncSession()
+    repository = ExportJobRepository(session)  # type: ignore[arg-type]
+
+    export_job = await repository.create_export_job(
+        CreateExportJobInput(
+            request_id=" request-1 ",
+            actor_hash="a" * 64,
+            workspace_id=" tenant-a ",
+            export_type=" chat_logs ",
+            format=" jsonl ",
+            filters={"limit": 1000, "refusal_only": True},
+        ),
+        commit=True,
+    )
+
+    assert isinstance(export_job, ExportJob)
+    assert export_job.request_id == "request-1"
+    assert export_job.actor_hash == "a" * 64
+    assert export_job.workspace_id == "tenant-a"
+    assert export_job.export_type == "chat_logs"
+    assert export_job.format == "jsonl"
+    assert export_job.status == "pending"
+    assert export_job.filters_ == {"limit": 1000, "refusal_only": True}
+    assert session.added == [export_job]
+    assert session.flushed is True
+    assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_create_export_job_rejects_blank_required_fields() -> None:
+    session = FakeAsyncSession()
+    repository = ExportJobRepository(session)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="workspace_id"):
+        await repository.create_export_job(
+            CreateExportJobInput(
+                request_id="request-1",
+                actor_hash="a" * 64,
+                workspace_id=" ",
+                export_type="chat_logs",
+                format="jsonl",
+            )
+        )
+
+    assert session.added == []
+    assert session.flushed is False
+
+
+@pytest.mark.asyncio
+async def test_list_export_jobs_filters_workspace_status_and_type() -> None:
+    export_job = make_export_job_model()
+    session = FakeAsyncSession(scalar_result=1, scalars_result=[export_job])
+    repository = ExportJobRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.list_export_jobs(
+        workspace_id=" tenant-a ",
+        limit=10,
+        offset=5,
+        status=" pending ",
+        export_type=" chat_logs ",
+    )
+
+    assert result.total == 1
+    assert result.jobs == [export_job]
+    assert session.scalar_statement is not None
+    assert session.scalars_statement is not None
+    compiled = str(session.scalars_statement)
+    assert "export_jobs.workspace_id" in compiled
+    assert "export_jobs.status" in compiled
+    assert "export_jobs.export_type" in compiled
+    assert "ORDER BY export_jobs.created_at DESC" in compiled
+
+
+@pytest.mark.asyncio
+async def test_claim_next_pending_export_job_marks_job_running() -> None:
+    export_job = make_export_job_model(status="pending")
+    session = FakeAsyncSession(scalar_result=export_job)
+    repository = ExportJobRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.claim_next_pending_export_job(commit=True)
+
+    assert result == export_job
+    assert export_job.status == "running"
+    assert export_job.started_at is not None
+    assert export_job.completed_at is None
+    assert export_job.error_message is None
+    assert session.scalar_statement is not None
+    assert "export_jobs.status" in str(session.scalar_statement)
+    assert session.flushed is True
+    assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_complete_export_job_marks_job_succeeded() -> None:
+    export_job = make_export_job_model(status="running")
+    export_job.started_at = datetime(2026, 5, 20, 8, 1, tzinfo=UTC)
+    session = FakeAsyncSession(scalar_result=export_job)
+    repository = ExportJobRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.complete_export_job(
+        job_id=export_job.id,
+        result_uri=" file://exports/chat-logs-public.jsonl ",
+        result_media_type=" application/x-ndjson ",
+        result_size_bytes=128,
+        commit=True,
+    )
+
+    assert result == export_job
+    assert export_job.status == "succeeded"
+    assert export_job.result_uri == "file://exports/chat-logs-public.jsonl"
+    assert export_job.result_media_type == "application/x-ndjson"
+    assert export_job.result_size_bytes == 128
+    assert export_job.error_message is None
+    assert export_job.completed_at is not None
+    assert session.flushed is True
+    assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_fail_export_job_marks_job_failed() -> None:
+    export_job = make_export_job_model(status="pending")
+    export_job.result_uri = "file://stale"
+    export_job.result_media_type = "text/csv"
+    export_job.result_size_bytes = 99
+    session = FakeAsyncSession(scalar_result=export_job)
+    repository = ExportJobRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.fail_export_job(
+        job_id=export_job.id,
+        error_message=" permission denied ",
+        commit=True,
+    )
+
+    assert result == export_job
+    assert export_job.status == "failed"
+    assert export_job.error_message == "permission denied"
+    assert export_job.result_uri is None
+    assert export_job.result_media_type is None
+    assert export_job.result_size_bytes is None
+    assert export_job.started_at is not None
+    assert export_job.completed_at is not None
+    assert session.flushed is True
+    assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_export_job_repository_rejects_invalid_state_transitions() -> None:
+    export_job = make_export_job_model(status="succeeded")
+    session = FakeAsyncSession(scalar_result=export_job)
+    repository = ExportJobRepository(session)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="pending"):
+        await repository.mark_export_job_running(job_id=export_job.id)
+
+    export_job.status = "pending"
+    with pytest.raises(ValueError, match="running"):
+        await repository.complete_export_job(
+            job_id=export_job.id,
+            result_uri="file://exports/chat-logs-public.jsonl",
+            result_media_type="application/x-ndjson",
+        )
 
 
 @pytest.mark.asyncio

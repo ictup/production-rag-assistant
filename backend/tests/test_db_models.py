@@ -7,6 +7,7 @@ from backend.app.db.models import (
     ChatSession,
     Document,
     DocumentChunk,
+    ExportJob,
     Workspace,
     WorkspaceAuditLog,
 )
@@ -16,6 +17,7 @@ def test_base_metadata_contains_core_document_tables() -> None:
     assert set(Base.metadata.tables) == {
         "workspaces",
         "workspace_audit_logs",
+        "export_jobs",
         "documents",
         "document_chunks",
         "chat_sessions",
@@ -51,8 +53,29 @@ def test_workspace_audit_log_has_operation_columns_and_indexes() -> None:
     assert "workspace_audit_logs_workspace_ids_idx" in index_names
 
 
+def test_export_job_has_lifecycle_columns_and_indexes() -> None:
+    constraints = {constraint.name for constraint in ExportJob.__table__.constraints}
+    index_names = {index.name for index in ExportJob.__table__.indexes}
+
+    assert ExportJob.__table__.c.workspace_id.nullable is False
+    assert ExportJob.__table__.c.request_id.nullable is False
+    assert ExportJob.__table__.c.actor_hash.nullable is False
+    assert ExportJob.__table__.c.export_type.nullable is False
+    assert ExportJob.__table__.c.format.nullable is False
+    assert ExportJob.__table__.c.status.nullable is False
+    assert ExportJob.filters_.name == "filters"
+    assert ExportJob.__table__.c.result_uri.nullable is True
+    assert ExportJob.__table__.c.error_message.nullable is True
+    assert ExportJob.__table__.c.started_at.nullable is True
+    assert ExportJob.__table__.c.completed_at.nullable is True
+    assert "export_jobs_status_check" in constraints
+    assert "export_jobs_workspace_created_at_idx" in index_names
+    assert "export_jobs_status_created_at_idx" in index_names
+    assert "export_jobs_request_id_idx" in index_names
+
+
 def test_workspace_scoped_tables_reference_workspace_registry() -> None:
-    for table in (Document, DocumentChunk, ChatSession, ChatLog):
+    for table in (Document, DocumentChunk, ChatSession, ChatLog, ExportJob):
         foreign_keys = list(table.__table__.c.workspace_id.foreign_keys)
 
         assert len(foreign_keys) == 1

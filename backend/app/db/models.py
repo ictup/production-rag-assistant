@@ -4,7 +4,9 @@ from typing import Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    BigInteger,
     Boolean,
+    CheckConstraint,
     Computed,
     DateTime,
     ForeignKey,
@@ -109,6 +111,77 @@ workspace_audit_logs_workspace_ids_idx = Index(
     "workspace_audit_logs_workspace_ids_idx",
     WorkspaceAuditLog.workspace_ids,
     postgresql_using="gin",
+)
+
+
+class ExportJob(Base):
+    __tablename__ = "export_jobs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'succeeded', 'failed')",
+            name="export_jobs_status_check",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey("workspaces.id", ondelete="RESTRICT", onupdate="CASCADE"),
+        nullable=False,
+    )
+    request_id: Mapped[str] = mapped_column(Text, nullable=False)
+    actor_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    export_type: Mapped[str] = mapped_column(Text, nullable=False)
+    format: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="pending",
+        server_default=sql_text("'pending'"),
+    )
+    filters_: Mapped[dict[str, Any]] = mapped_column(
+        "filters",
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=sql_text("'{}'::jsonb"),
+    )
+    result_uri: Mapped[str | None] = mapped_column(Text)
+    result_media_type: Mapped[str | None] = mapped_column(Text)
+    result_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=sql_text("now()"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=sql_text("now()"),
+        onupdate=sql_text("now()"),
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+export_jobs_workspace_created_at_idx = Index(
+    "export_jobs_workspace_created_at_idx",
+    ExportJob.workspace_id,
+    ExportJob.created_at,
+)
+export_jobs_status_created_at_idx = Index(
+    "export_jobs_status_created_at_idx",
+    ExportJob.status,
+    ExportJob.created_at,
+)
+export_jobs_request_id_idx = Index(
+    "export_jobs_request_id_idx",
+    ExportJob.request_id,
 )
 
 
