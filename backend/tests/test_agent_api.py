@@ -1,3 +1,4 @@
+import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -50,6 +51,74 @@ class FakeSupportTicketRepository:
         return []
 
 
+def make_agent_approval(status: str = "pending"):
+    decided_at = (
+        datetime(2026, 5, 20, 8, 30, tzinfo=UTC)
+        if status != "pending"
+        else None
+    )
+    return SimpleNamespace(
+        id=uuid.UUID("77777777-7777-7777-7777-777777777777"),
+        run_id="agent_request-1",
+        ticket_id="TICKET-1",
+        workspace_id="tenant-a",
+        request_id="request-1",
+        actor_hash="a" * 64,
+        status=status,
+        category="data_privacy",
+        risk_level="high",
+        reason="high-risk support request",
+        customer_message="Delete customer prompts.",
+        draft_answer="This support request requires human review.",
+        tool_calls=[{"tool_name": "risk_check_tool"}],
+        node_runs=[{"node_name": "risk_check"}],
+        human_feedback="Reviewed." if status != "pending" else None,
+        metadata_={"source": "test"},
+        created_at=datetime(2026, 5, 20, 8, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 5, 20, 8, 30, tzinfo=UTC),
+        decided_at=decided_at,
+    )
+
+
+MISSING = object()
+
+
+class FakeAgentApprovalRepository:
+    def __init__(
+        self,
+        approval=MISSING,
+        total: int = 1,
+        decision_error: ValueError | None = None,
+    ) -> None:
+        self.approval = make_agent_approval() if approval is MISSING else approval
+        self.total = total
+        self.decision_error = decision_error
+        self.list_calls = []
+        self.get_calls = []
+        self.decision_calls = []
+
+    async def list_agent_approvals(self, **kwargs):
+        self.list_calls.append(dict(kwargs))
+        approvals = [] if self.approval is None else [self.approval]
+        return SimpleNamespace(total=self.total, approvals=approvals)
+
+    async def get_agent_approval(self, **kwargs):
+        self.get_calls.append(dict(kwargs))
+        return self.approval
+
+    async def decide_agent_approval(self, **kwargs):
+        self.decision_calls.append(dict(kwargs))
+        if self.decision_error is not None:
+            raise self.decision_error
+        if self.approval is None:
+            return None
+        self.approval.status = kwargs["decision"]
+        self.approval.human_feedback = kwargs.get("human_feedback")
+        self.approval.decided_at = datetime(2026, 5, 20, 8, 45, tzinfo=UTC)
+        self.approval.updated_at = self.approval.decided_at
+        return self.approval
+
+
 class FakeWorkspaceRepository:
     def __init__(
         self,
@@ -74,11 +143,15 @@ def build_client(
     settings: Settings | None = None,
     fake_pipeline: FakeRagPipeline | None = None,
     fake_ticket_repository: FakeSupportTicketRepository | None = None,
+    fake_approval_repository: FakeAgentApprovalRepository | None = None,
     fake_workspace_repository: FakeWorkspaceRepository | None = None,
 ) -> TestClient:
     settings = settings or Settings(api_keys="dev-key")
     fake_pipeline = fake_pipeline or FakeRagPipeline()
     fake_ticket_repository = fake_ticket_repository or FakeSupportTicketRepository()
+    fake_approval_repository = (
+        fake_approval_repository or FakeAgentApprovalRepository()
+    )
     fake_workspace_repository = (
         fake_workspace_repository or FakeWorkspaceRepository()
     )
@@ -89,6 +162,9 @@ def build_client(
     )
     app.dependency_overrides[routes_agent.get_support_ticket_repository] = (
         lambda: fake_ticket_repository
+    )
+    app.dependency_overrides[routes_agent.get_agent_approval_repository] = (
+        lambda: fake_approval_repository
     )
     app.dependency_overrides[routes_agent.get_workspace_repository] = (
         lambda: fake_workspace_repository
@@ -256,4 +332,185 @@ def test_openapi_exposes_support_triage_route() -> None:
     response = client.get("/openapi.json")
 
     assert response.status_code == 200
-    assert "/agent/support-triage" in response.json()["paths"]
+    paths = response.json()["paths"]
+    assert "/agent/support-triage" in paths
+    assert "/agent/approvals" in paths
+    assert "/agent/approvals/{approval_id}" in paths
+    assert "/agent/approvals/{approval_id}/decision" in paths
+
+
+def test_list_agent_approvals_filters_workspace_and_status() -> None:
+    fake_repository = FakeAgentApprovalRepository()
+    client = build_client(
+        Settings(
+            api_keys="operator-key",
+            api_key_roles="operator-key=operator",
+            api_key_workspace_access="operator-key=tenant-a",
+        ),
+        fake_approval_repository=fake_repository,
+    )
+
+    response = client.get(
+        "/agent/approvals?workspace_id=tenant-a&status=pending&limit=10&offset=5",
+        headers={"Authorization": "Bearer operator-key"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["count"] == 1
+    assert body["limit"] == 10
+    assert body["offset"] == 5
+    assert body["approvals"][0]["id"] == "77777777-7777-7777-7777-777777777777"
+    assert body["approvals"][0]["workspace_id"] == "tenant-a"
+    assert body["approvals"][0]["status"] == "pending"
+    assert body["approvals"][0]["tool_calls"] == [
+        {"tool_name": "risk_check_tool"}
+    ]
+    assert body["approvals"][0]["node_runs"] == [
+        {"node_name": "risk_check"}
+    ]
+    assert fake_repository.list_calls == [
+        {
+            "workspace_id": "tenant-a",
+            "status": "pending",
+            "limit": 10,
+            "offset": 5,
+        }
+    ]
+
+
+def test_list_agent_approvals_enforces_operator_role() -> None:
+    client = build_client(
+        Settings(
+            api_keys="viewer-key",
+            api_key_roles="viewer-key=viewer",
+        )
+    )
+
+    response = client.get(
+        "/agent/approvals",
+        headers={"Authorization": "Bearer viewer-key"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "insufficient api role"
+
+
+def test_get_agent_approval_returns_detail() -> None:
+    fake_repository = FakeAgentApprovalRepository()
+    client = build_client(
+        Settings(
+            api_keys="operator-key",
+            api_key_roles="operator-key=operator",
+        ),
+        fake_approval_repository=fake_repository,
+    )
+
+    response = client.get(
+        "/agent/approvals/77777777-7777-7777-7777-777777777777"
+        "?workspace_id=tenant-a",
+        headers={"Authorization": "Bearer operator-key"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["approval"]["run_id"] == "agent_request-1"
+    assert body["approval"]["ticket_id"] == "TICKET-1"
+    assert body["approval"]["metadata"] == {"source": "test"}
+    assert fake_repository.get_calls == [
+        {
+            "approval_id": uuid.UUID("77777777-7777-7777-7777-777777777777"),
+            "workspace_id": "tenant-a",
+        }
+    ]
+
+
+def test_get_agent_approval_returns_404_when_missing() -> None:
+    fake_repository = FakeAgentApprovalRepository(approval=None, total=0)
+    client = build_client(
+        Settings(
+            api_keys="operator-key",
+            api_key_roles="operator-key=operator",
+        ),
+        fake_approval_repository=fake_repository,
+    )
+
+    response = client.get(
+        "/agent/approvals/77777777-7777-7777-7777-777777777777",
+        headers={"Authorization": "Bearer operator-key"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "agent approval not found"
+
+
+def test_decide_agent_approval_updates_pending_approval() -> None:
+    fake_repository = FakeAgentApprovalRepository()
+    client = build_client(
+        Settings(
+            api_keys="admin-key",
+            api_key_roles="admin-key=admin",
+            api_key_workspace_access="admin-key=tenant-a",
+        ),
+        fake_approval_repository=fake_repository,
+    )
+
+    response = client.post(
+        "/agent/approvals/77777777-7777-7777-7777-777777777777/decision"
+        "?workspace_id=tenant-a",
+        headers={"Authorization": "Bearer admin-key"},
+        json={
+            "decision": "approved",
+            "human_feedback": "Looks safe.",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["approval"]["status"] == "approved"
+    assert body["approval"]["human_feedback"] == "Looks safe."
+    assert body["approval"]["decided_at"] is not None
+    assert fake_repository.decision_calls == [
+        {
+            "approval_id": uuid.UUID("77777777-7777-7777-7777-777777777777"),
+            "workspace_id": "tenant-a",
+            "decision": "approved",
+            "human_feedback": "Looks safe.",
+            "commit": True,
+        }
+    ]
+
+
+def test_decide_agent_approval_requires_admin_role() -> None:
+    client = build_client(
+        Settings(
+            api_keys="operator-key",
+            api_key_roles="operator-key=operator",
+        )
+    )
+
+    response = client.post(
+        "/agent/approvals/77777777-7777-7777-7777-777777777777/decision",
+        headers={"Authorization": "Bearer operator-key"},
+        json={"decision": "approved"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "insufficient api role"
+
+
+def test_decide_agent_approval_returns_409_when_not_pending() -> None:
+    fake_repository = FakeAgentApprovalRepository(
+        decision_error=ValueError("agent approval must be pending to decide")
+    )
+    client = build_client(fake_approval_repository=fake_repository)
+
+    response = client.post(
+        "/agent/approvals/77777777-7777-7777-7777-777777777777/decision",
+        headers=AUTH_HEADERS,
+        json={"decision": "rejected"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "agent approval is not pending"

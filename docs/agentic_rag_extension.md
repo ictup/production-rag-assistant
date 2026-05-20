@@ -80,10 +80,9 @@ migration advice, and latency troubleshooting.
 
 ## Planned Next Steps
 
-1. Add approval API endpoints.
-2. Connect high-risk workflow runs to pending approval creation.
-3. Add agent-specific Prometheus metrics.
-4. Add 30 support eval cases and an agent eval report.
+1. Connect high-risk workflow runs to pending approval creation.
+2. Add agent-specific Prometheus metrics.
+3. Add 30 support eval cases and an agent eval report.
 
 ## Step 2 Scope
 
@@ -173,3 +172,20 @@ load approvals by ID or run ID, list approvals by workspace and status, and
 apply an approved or rejected decision with optional human feedback. No approval
 API endpoints are exposed yet, and the support triage workflow does not create
 approval rows until the API and high-risk workflow wiring are added.
+
+## Step 8 Scope
+
+The eighth implementation step exposes the approval API foundation:
+
+```text
+GET /agent/approvals
+GET /agent/approvals/{approval_id}
+POST /agent/approvals/{approval_id}/decision
+```
+
+The list and detail endpoints require an operator role and enforce workspace
+access. The decision endpoint requires an admin role and accepts only
+`approved` or `rejected` decisions with optional human feedback. The endpoints
+read and update existing `agent_approvals` rows. The support triage workflow
+still does not create approval rows automatically; that remains the next wiring
+step.

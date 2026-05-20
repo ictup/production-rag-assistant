@@ -204,7 +204,7 @@ Run the eval gate:
 uv run python -m evals.run --format summary --fail-on-failure --no-output
 ```
 
-Current local baseline: `662 passed`.
+Current local baseline: `671 passed`.
 
 ## Configuration Model
 
@@ -255,6 +255,9 @@ Agent support triage skeleton:
 
 ```text
 POST /agent/support-triage
+GET /agent/approvals
+GET /agent/approvals/{approval_id}
+POST /agent/approvals/{approval_id}/decision
 ```
 
 ```powershell
@@ -262,6 +265,16 @@ curl.exe -X POST http://127.0.0.1:8000/agent/support-triage `
   -H "Authorization: Bearer dev-key" `
   -H "Content-Type: application/json" `
   -d "{\"ticket_id\":\"TICKET-001\",\"customer_message\":\"How can I debug citation validation failures?\",\"workspace_id\":\"public\"}"
+```
+
+```powershell
+curl.exe "http://127.0.0.1:8000/agent/approvals?workspace_id=public&status=pending" `
+  -H "Authorization: Bearer dev-key"
+
+curl.exe -X POST "http://127.0.0.1:8000/agent/approvals/<approval-id>/decision?workspace_id=public" `
+  -H "Authorization: Bearer dev-key" `
+  -H "Content-Type: application/json" `
+  -d "{\"decision\":\"approved\",\"human_feedback\":\"Reviewed and safe to proceed.\"}"
 ```
 
 Chat:

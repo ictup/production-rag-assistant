@@ -50,6 +50,8 @@ def test_readme_documents_core_commands_and_links() -> None:
         "docs/PORTFOLIO_PRESENTATION.md",
         "docs/agentic_rag_extension.md",
         "POST /agent/support-triage",
+        "GET /agent/approvals",
+        "POST /agent/approvals/{approval_id}/decision",
         "rag_search_tool",
         "ticket_lookup_tool",
         "draft_response_tool",

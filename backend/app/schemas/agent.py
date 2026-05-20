@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -8,11 +9,14 @@ from backend.app.agent.state import (
     TicketCategory,
     build_initial_agent_state,
 )
+from backend.app.db.models import AgentApproval
+from backend.app.db.repositories import AgentApprovalListResult
 
 TicketPriority = Literal["low", "normal", "high", "urgent"]
 CustomerTier = Literal["free", "pro", "enterprise"]
 AgentRunStatus = Literal["finalized", "approval_required", "failed"]
 ApprovalDecision = Literal["approved", "rejected"]
+AgentApprovalStatus = Literal["pending", "approved", "rejected"]
 
 
 class SupportTicketRequest(BaseModel):
@@ -90,3 +94,85 @@ class AgentApprovalDecisionRequest(BaseModel):
         if not value:
             raise ValueError("human_feedback must not be blank")
         return value
+
+
+class AgentApprovalItem(BaseModel):
+    id: str
+    run_id: str
+    ticket_id: str
+    workspace_id: str
+    request_id: str
+    actor_hash: str
+    status: AgentApprovalStatus
+    category: str | None
+    risk_level: RiskLevel
+    reason: str
+    customer_message: str
+    draft_answer: str
+    tool_calls: list[dict[str, Any]]
+    node_runs: list[dict[str, Any]]
+    human_feedback: str | None
+    metadata: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+    decided_at: datetime | None
+
+    @classmethod
+    def from_model(cls, approval: AgentApproval) -> "AgentApprovalItem":
+        return cls(
+            id=str(approval.id),
+            run_id=approval.run_id,
+            ticket_id=approval.ticket_id,
+            workspace_id=approval.workspace_id,
+            request_id=approval.request_id,
+            actor_hash=approval.actor_hash,
+            status=approval.status,  # type: ignore[arg-type]
+            category=approval.category,
+            risk_level=approval.risk_level,  # type: ignore[arg-type]
+            reason=approval.reason,
+            customer_message=approval.customer_message,
+            draft_answer=approval.draft_answer,
+            tool_calls=list(approval.tool_calls),
+            node_runs=list(approval.node_runs),
+            human_feedback=approval.human_feedback,
+            metadata=dict(approval.metadata_),
+            created_at=approval.created_at,
+            updated_at=approval.updated_at,
+            decided_at=approval.decided_at,
+        )
+
+
+class AgentApprovalResponse(BaseModel):
+    approval: AgentApprovalItem
+
+    @classmethod
+    def from_model(cls, approval: AgentApproval) -> "AgentApprovalResponse":
+        return cls(approval=AgentApprovalItem.from_model(approval))
+
+
+class AgentApprovalsResponse(BaseModel):
+    total: int = Field(ge=0)
+    count: int = Field(ge=0)
+    limit: int = Field(gt=0)
+    offset: int = Field(ge=0)
+    approvals: list[AgentApprovalItem]
+
+    @classmethod
+    def from_result(
+        cls,
+        *,
+        limit: int,
+        offset: int,
+        result: AgentApprovalListResult,
+    ) -> "AgentApprovalsResponse":
+        approvals = [
+            AgentApprovalItem.from_model(approval)
+            for approval in result.approvals
+        ]
+        return cls(
+            total=result.total,
+            count=len(approvals),
+            limit=limit,
+            offset=offset,
+            approvals=approvals,
+        )

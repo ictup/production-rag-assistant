@@ -132,6 +132,10 @@ docs/agentic_rag_extension.md
   顺序执行节点，并在响应中返回 `node_runs` 节点级执行记录
 - Agentic RAG 审批持久化基础：`agent_approvals` 表和
   `AgentApprovalRepository` 已支持 pending/approved/rejected 状态流转
+- Agentic RAG 审批 API 基础版：`GET /agent/approvals`、
+  `GET /agent/approvals/{approval_id}` 和
+  `POST /agent/approvals/{approval_id}/decision` 已支持 workspace 权限和
+  API key role 检查
 - API key 鉴权：`Authorization: Bearer dev-key`
 - workspace 隔离头：`X-Workspace-ID`
 - API key workspace 访问控制：`API_KEY_WORKSPACE_ACCESS`
@@ -995,7 +999,7 @@ uv run pytest
 当前最近一次本地通过结果：
 
 ```text
-662 passed
+671 passed
 ```
 
 ### Pipeline Smoke
