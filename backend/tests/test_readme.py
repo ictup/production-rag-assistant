@@ -8,6 +8,9 @@ def test_readme_has_project_homepage_sections() -> None:
 
     required_sections = [
         "# Production RAG Assistant",
+        "## Why This Project Matters",
+        "## Project Highlights",
+        "## Release Status",
         "## What Is Included",
         "## Architecture",
         "## Repository Map",
@@ -42,6 +45,9 @@ def test_readme_documents_core_commands_and_links() -> None:
         "uv run python -m backend.app.rag.pipeline_smoke",
         "uv run python -m evals.document_management_smoke",
         "http://127.0.0.1:8000/app/",
+        "docs/releases/v0.1.0.md",
+        "docs/releases/v0.1.0-github-release.md",
+        "docs/PORTFOLIO_PRESENTATION.md",
         "docs/PROJECT_HANDOFF.md",
         "docs/CONFIGURATION.md",
         "docs/SECRET_MANAGER_MAPPING.md",
@@ -52,6 +58,26 @@ def test_readme_documents_core_commands_and_links() -> None:
         "docs/EVAL_TRENDS.md",
     ]
 
+    missing_snippets = [
+        snippet
+        for snippet in required_snippets
+        if snippet not in readme
+    ]
+
+    assert missing_snippets == []
+
+
+def test_readme_has_public_portfolio_positioning() -> None:
+    readme = README_PATH.read_text(encoding="utf-8")
+
+    required_snippets = [
+        "![CI](https://github.com/ictup/Production_RAG_Assistant/actions/workflows/ci.yml/badge.svg)",
+        "![Release](https://img.shields.io/github/v/release/ictup/Production_RAG_Assistant)",
+        "portfolio-grade AI backend project",
+        "This is not a notebook demo.",
+        "| Area | What is implemented |",
+        "`v0.1.0` is the production readiness baseline",
+    ]
     missing_snippets = [
         snippet
         for snippet in required_snippets

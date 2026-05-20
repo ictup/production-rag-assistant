@@ -1,5 +1,12 @@
 # Production RAG Assistant
 
+![CI](https://github.com/ictup/Production_RAG_Assistant/actions/workflows/ci.yml/badge.svg)
+![Release](https://img.shields.io/github/v/release/ictup/Production_RAG_Assistant)
+![Python](https://img.shields.io/badge/python-3.11-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-backend-009688)
+![Postgres](https://img.shields.io/badge/Postgres-pgvector-336791)
+![Tests](https://img.shields.io/badge/test%20suite-600%2B%20tests-brightgreen)
+
 Production RAG Assistant is a production-style Retrieval-Augmented Generation
 backend built with FastAPI, Postgres/pgvector, hybrid retrieval, provider
 switching, deterministic evals, observability, and a minimal browser UI.
@@ -8,6 +15,41 @@ The project is designed to run locally without paid model calls by default.
 Fake providers are enabled out of the box. OpenAI-compatible embedding,
 generation, query rewrite, and reranking can be enabled through `.env` when a
 real provider key is available.
+
+## Why This Project Matters
+
+This is not a notebook demo. It is a portfolio-grade AI backend project focused
+on the engineering work needed around a RAG system: database modeling, retrieval
+quality, workspace isolation, API security, async jobs, eval gates,
+observability, deployment checks, and release management.
+
+The goal is to demonstrate that the RAG pipeline can be operated, tested,
+audited, and evolved as a backend service rather than only run once in an
+experiment.
+
+## Project Highlights
+
+| Area | What is implemented |
+| --- | --- |
+| RAG pipeline | Markdown ingestion, chunking, fake/OpenAI embeddings, vector retrieval, sparse retrieval, RRF fusion, query rewrite, reranking, citations, and refusal guards |
+| API product surface | FastAPI chat, streaming chat, documents, workspaces, sessions, export jobs, health, metrics, and a minimal browser UI |
+| Data layer | Postgres, pgvector, Alembic migrations, repositories, workspace foreign keys, audit logs, and export job state transitions |
+| Security and tenancy | API keys, roles, workspace access control, workspace archive write protection, request IDs, and secret-safe config checks |
+| Operations | Dockerfile, production-style Compose stack, export worker, config preflight, deployment runbook, secret manager mapping, and release checklist |
+| Quality system | Deterministic evals, smoke tests, CI, README/docs tests, release notes, and a reproducible validation checklist |
+| Observability | Structured logs, Prometheus metrics, provider latency, token usage, cost estimates, and database observability templates |
+
+## Release Status
+
+`v0.1.0` is the production readiness baseline. It includes the complete local
+RAG backend, Dockerized production-style runtime, operational documentation, and
+validated release gates.
+
+- Release notes: [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md)
+- GitHub Release body draft:
+  [docs/releases/v0.1.0-github-release.md](docs/releases/v0.1.0-github-release.md)
+- Portfolio presentation guide:
+  [docs/PORTFOLIO_PRESENTATION.md](docs/PORTFOLIO_PRESENTATION.md)
 
 ## What Is Included
 
@@ -156,7 +198,7 @@ Run the eval gate:
 uv run python -m evals.run --format summary --fail-on-failure --no-output
 ```
 
-Current local baseline: `599 passed`.
+Current local baseline: `603 passed`.
 
 ## Configuration Model
 
@@ -377,6 +419,7 @@ The secret scan should only match intentional placeholders, never real keys.
 ## Documentation
 
 - [Project handoff and quick start](docs/PROJECT_HANDOFF.md)
+- [Portfolio presentation guide](docs/PORTFOLIO_PRESENTATION.md)
 - [Configuration and secrets guide](docs/CONFIGURATION.md)
 - [Secret manager mapping](docs/SECRET_MANAGER_MAPPING.md)
 - [Deployment runbook](docs/DEPLOYMENT_RUNBOOK.md)
