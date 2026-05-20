@@ -93,6 +93,7 @@ def test_static_app_serves_assets() -> None:
     assert "formatUsage" in script_response.text
     assert "formatCost" in script_response.text
     assert "/workspaces?" in script_response.text
+    assert "status: state.admin.workspaceFilter" in script_response.text
     assert 'params.set("q", state.admin.workspaceSearch)' in script_response.text
     assert "workspaceOffset" in script_response.text
     assert "/archive" in script_response.text

@@ -381,6 +381,7 @@ async function createWorkspaceFromAdmin() {
     els.workspaceId.value = state.workspaceId;
     localStorage.setItem("rag.workspaceId", state.workspaceId);
     state.admin.workspaceOffset = 0;
+    state.admin.workspaceFilter = "all";
     clearAdminWorkspaceSearch();
     state.admin.logOffset = 0;
     if (changed) {
@@ -428,8 +429,7 @@ async function updateWorkspaceFromAdmin() {
     });
     const body = await response.json();
     replaceAdminWorkspace(body.workspace);
-    syncWorkspaceEditForm();
-    renderAdminWorkspaces();
+    await loadAdminOverview();
     setAdminStatus(`Updated workspace ${body.workspace.id}`);
   } catch (error) {
     setAdminError(error.message);
@@ -459,9 +459,7 @@ async function archiveWorkspaceFromAdmin() {
     );
     const body = await response.json();
     replaceAdminWorkspace(body.workspace);
-    syncWorkspaceEditForm();
-    renderAdminWorkspaces();
-    syncWorkspaceWriteGuards();
+    await loadAdminOverview();
     setAdminStatus(`Archived workspace ${body.workspace.id}`);
   } catch (error) {
     setAdminError(error.message);
@@ -488,9 +486,7 @@ async function restoreWorkspaceFromAdmin() {
     );
     const body = await response.json();
     replaceAdminWorkspace(body.workspace);
-    syncWorkspaceEditForm();
-    renderAdminWorkspaces();
-    syncWorkspaceWriteGuards();
+    await loadAdminOverview();
     setAdminStatus(`Restored workspace ${body.workspace.id}`);
   } catch (error) {
     setAdminError(error.message);
@@ -518,6 +514,7 @@ function buildWorkspacesUrl() {
   const params = new URLSearchParams({
     limit: String(state.admin.workspaceLimit),
     offset: String(state.admin.workspaceOffset),
+    status: state.admin.workspaceFilter,
   });
   if (state.admin.workspaceSearch) {
     params.set("q", state.admin.workspaceSearch);
@@ -874,9 +871,7 @@ function renderAdminPagination({ count, limit, offset }) {
 function renderAdminWorkspacePagination({ count, total, limit, offset }) {
   const start = total > 0 ? offset + 1 : 0;
   const end = total > 0 ? offset + count : 0;
-  const emptyLabel = state.admin.workspaceSearch
-    ? "No matching workspaces"
-    : "No workspaces";
+  const emptyLabel = workspaceFilterEmptyMessage();
   els.adminWorkspacePageInfo.textContent =
     total > 0 ? `Workspaces ${start}-${end} of ${total}` : emptyLabel;
   els.adminPrevWorkspaces.disabled = offset <= 0;
@@ -885,8 +880,9 @@ function renderAdminWorkspacePagination({ count, total, limit, offset }) {
 
 function setAdminWorkspaceFilter(filter) {
   state.admin.workspaceFilter = filter;
+  state.admin.workspaceOffset = 0;
   renderAdminWorkspaceFilters();
-  renderAdminWorkspaces();
+  void loadAdminOverview();
 }
 
 function renderAdminWorkspaceFilters() {

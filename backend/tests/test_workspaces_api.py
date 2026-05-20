@@ -38,7 +38,9 @@ class FakeWorkspaceRepository:
         self.update_calls: list[tuple[UpdateWorkspaceInput, bool]] = []
         self.archive_calls: list[tuple[ArchiveWorkspaceInput, bool]] = []
         self.restore_calls: list[tuple[str, bool]] = []
-        self.list_calls: list[tuple[frozenset[str] | None, int, int, str | None]] = []
+        self.list_calls: list[
+            tuple[frozenset[str] | None, int, int, str | None, bool | None]
+        ] = []
         self.detail_calls: list[str] = []
 
     async def create_workspace(
@@ -57,8 +59,9 @@ class FakeWorkspaceRepository:
         offset: int = 0,
         workspace_ids: frozenset[str] | None = None,
         search: str | None = None,
+        archived: bool | None = None,
     ) -> WorkspaceListResult:
-        self.list_calls.append((workspace_ids, limit, offset, search))
+        self.list_calls.append((workspace_ids, limit, offset, search, archived))
         return self.list_result
 
     async def get_workspace(self, *, workspace_id: str) -> Workspace | None:
@@ -214,7 +217,7 @@ def test_list_workspaces_route_returns_paginated_workspaces() -> None:
     )
 
     assert response.status_code == 200
-    assert fake_repository.list_calls == [(None, 10, 5, None)]
+    assert fake_repository.list_calls == [(None, 10, 5, None, None)]
     body = response.json()
     assert body["total"] == 1
     assert body["count"] == 1
@@ -234,7 +237,44 @@ def test_list_workspaces_route_forwards_search_query() -> None:
     )
 
     assert response.status_code == 200
-    assert fake_repository.list_calls == [(None, 20, 0, " Tenant ")]
+    assert fake_repository.list_calls == [(None, 20, 0, " Tenant ", None)]
+
+
+def test_list_workspaces_route_forwards_status_filter() -> None:
+    fake_repository = FakeWorkspaceRepository()
+    client = build_client(fake_repository)
+
+    active_response = client.get(
+        "/workspaces",
+        headers=AUTH_HEADERS,
+        params={"status": "active"},
+    )
+    archived_response = client.get(
+        "/workspaces",
+        headers=AUTH_HEADERS,
+        params={"status": "archived"},
+    )
+
+    assert active_response.status_code == 200
+    assert archived_response.status_code == 200
+    assert fake_repository.list_calls == [
+        (None, 20, 0, None, False),
+        (None, 20, 0, None, True),
+    ]
+
+
+def test_list_workspaces_route_rejects_invalid_status_filter() -> None:
+    fake_repository = FakeWorkspaceRepository()
+    client = build_client(fake_repository)
+
+    response = client.get(
+        "/workspaces",
+        headers=AUTH_HEADERS,
+        params={"status": "deleted"},
+    )
+
+    assert response.status_code == 422
+    assert fake_repository.list_calls == []
 
 
 def test_list_workspaces_route_filters_to_principal_allowed_workspaces() -> None:
@@ -254,7 +294,7 @@ def test_list_workspaces_route_filters_to_principal_allowed_workspaces() -> None
 
     assert response.status_code == 200
     assert fake_repository.list_calls == [
-        (frozenset({"tenant-a", "tenant-b"}), 20, 0, None)
+        (frozenset({"tenant-a", "tenant-b"}), 20, 0, None, None)
     ]
 
 

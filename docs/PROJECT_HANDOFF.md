@@ -558,6 +558,13 @@ curl.exe "http://127.0.0.1:8000/workspaces?limit=20&offset=0" `
   -H "Authorization: Bearer dev-key"
 ```
 
+按状态过滤 workspace：
+
+```powershell
+curl.exe "http://127.0.0.1:8000/workspaces?limit=20&offset=0&status=active" `
+  -H "Authorization: Bearer dev-key"
+```
+
 按 ID、名称或描述搜索 workspace：
 
 ```powershell
@@ -1225,13 +1232,13 @@ Completed: 2026-05-20T09:51:56Z
 - workspace 编辑基础版已完成：`PATCH /workspaces/{workspace_id}` 可更新 name、description、metadata，Admin overview 可编辑当前 workspace。
 - workspace 归档/恢复 UI 基础版已完成：Admin overview 可展示归档状态，并调用 archive/restore API 更新当前 workspace。
 - workspace 归档状态 UX guard 已完成：当前 workspace 已归档时，Web UI 会显示只读提示，并禁用 chat、session 创建、document upload 和 reindex 写入控件。
-- workspace 列表状态过滤已完成：Admin overview 支持 All / Active / Archived 过滤。
+- workspace 列表状态过滤已完成：`GET /workspaces?status=all|active|archived` 会按 `archived_at` 做后端过滤，Admin overview 支持 All / Active / Archived 全量过滤。
 - workspace 列表分页基础版已完成：Admin overview 使用 `/workspaces?limit&offset` 做 Previous/Next 翻页。
 - workspace 搜索基础版已完成：`GET /workspaces?q=...` 会按 workspace ID、name 和 description 过滤，Admin overview 可搜索并重置分页。
 - chat log 审计过滤基础版已完成：`GET /chat/logs` 支持 `offset`、`session_id`、`request_id`、`refusal_only`、`citation_valid`，Admin overview 支持对应筛选和 Previous/Next 翻页。
 - chat log 审计导出基础版已完成：`GET /chat/logs/export` 支持同一组过滤参数，可导出 JSONL 或 CSV，Admin overview 可按当前过滤条件触发下载。
 - chat log 审计详情基础版已完成：每条最近日志可展开查看 session、request、citation、sources、refusal、retrieval、query rewrite、metadata filter、usage 和 cost。
-- 完整管理后台仍未完成：还缺少用户/角色/组织管理、workspace 归档过滤/批量操作、导出任务异步化/大文件存储、批量运维操作和权限分层 UI。
+- 完整管理后台仍未完成：还缺少用户/角色/组织管理、workspace 批量操作、导出任务异步化/大文件存储、批量运维操作和权限分层 UI。
 
 ### 生产部署
 
@@ -1344,20 +1351,21 @@ OPENAI_API_KEY
 18. workspace 列表状态过滤。已完成。
 19. workspace 列表分页基础版。已完成。
 20. workspace 搜索基础版。已完成。
+21. workspace 后端状态过滤。已完成。
 
 ## 14. 当前优先级建议
 
 建议下一步优先做：
 
 ```text
-workspace 后端状态过滤
+workspace 批量操作基础版
 ```
 
 原因：
 
-- workspace 归档/恢复 API、Admin UI、后端写保护、前端写入禁用、状态过滤、分页和搜索已完成。
-- 当前状态过滤仍是当前页内过滤，不是后端全量筛选。
-- 下一步可以把 Active / Archived 状态过滤下沉到后端，避免多租户数量增长后过滤结果只覆盖当前页。
+- workspace 归档/恢复 API、Admin UI、后端写保护、前端写入禁用、状态过滤、分页、搜索和后端状态过滤已完成。
+- 当前 workspace 管理仍以单个 workspace 操作为主。
+- 下一步可以做 workspace 批量操作基础版，例如在 Admin overview 中选择多个 workspace 后批量 archive 或 restore。
 
 以下命令是后续需要真实 provider 时的验证入口：
 

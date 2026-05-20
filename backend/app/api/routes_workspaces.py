@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
@@ -20,6 +20,8 @@ from backend.app.schemas.workspaces import (
 )
 
 router = APIRouter(tags=["workspaces"])
+
+WorkspaceStatusFilter = Literal["all", "active", "archived"]
 
 
 @router.post(
@@ -55,18 +57,33 @@ async def list_workspaces(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
     q: Annotated[str | None, Query(max_length=256)] = None,
+    workspace_status: Annotated[
+        WorkspaceStatusFilter,
+        Query(alias="status"),
+    ] = "all",
 ) -> WorkspacesResponse:
     result = await repository.list_workspaces(
         workspace_ids=principal.allowed_workspaces,
         limit=limit,
         offset=offset,
         search=q,
+        archived=workspace_status_to_archived_filter(workspace_status),
     )
     return WorkspacesResponse.from_result(
         limit=limit,
         offset=offset,
         result=result,
     )
+
+
+def workspace_status_to_archived_filter(
+    workspace_status: WorkspaceStatusFilter,
+) -> bool | None:
+    if workspace_status == "active":
+        return False
+    if workspace_status == "archived":
+        return True
+    return None
 
 
 @router.get("/workspaces/{workspace_id}", response_model=WorkspaceResponse)

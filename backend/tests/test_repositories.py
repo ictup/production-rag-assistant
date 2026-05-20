@@ -290,6 +290,44 @@ async def test_list_workspaces_filters_by_search_query() -> None:
 
 
 @pytest.mark.asyncio
+async def test_list_workspaces_filters_by_archived_status() -> None:
+    workspace = make_workspace_model()
+    session = FakeAsyncSession(
+        scalar_result=1,
+        scalars_result=[workspace],
+    )
+    repository = WorkspaceRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.list_workspaces(archived=False)
+
+    assert result.total == 1
+    assert result.workspaces == [workspace]
+    assert session.scalar_statement is not None
+    assert session.scalars_statement is not None
+    compiled = str(session.scalars_statement)
+    assert "workspaces.archived_at IS NULL" in compiled
+
+
+@pytest.mark.asyncio
+async def test_list_workspaces_filters_by_archived_records() -> None:
+    workspace = make_workspace_model()
+    session = FakeAsyncSession(
+        scalar_result=1,
+        scalars_result=[workspace],
+    )
+    repository = WorkspaceRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.list_workspaces(archived=True)
+
+    assert result.total == 1
+    assert result.workspaces == [workspace]
+    assert session.scalar_statement is not None
+    assert session.scalars_statement is not None
+    compiled = str(session.scalars_statement)
+    assert "workspaces.archived_at IS NOT NULL" in compiled
+
+
+@pytest.mark.asyncio
 async def test_list_workspaces_returns_empty_without_query_for_empty_set() -> None:
     session = FakeAsyncSession()
     repository = WorkspaceRepository(session)  # type: ignore[arg-type]

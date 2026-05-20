@@ -189,6 +189,7 @@ class WorkspaceRepository:
         offset: int = 0,
         workspace_ids: frozenset[str] | None = None,
         search: str | None = None,
+        archived: bool | None = None,
     ) -> WorkspaceListResult:
         if limit <= 0:
             raise ValueError("limit must be greater than zero")
@@ -200,6 +201,10 @@ class WorkspaceRepository:
         filters = []
         if workspace_ids is not None:
             filters.append(Workspace.id.in_(sorted(workspace_ids)))
+        if archived is True:
+            filters.append(Workspace.archived_at.is_not(None))
+        elif archived is False:
+            filters.append(Workspace.archived_at.is_(None))
         search_query = normalize_optional_text(search)
         if search_query is not None:
             filters.append(
