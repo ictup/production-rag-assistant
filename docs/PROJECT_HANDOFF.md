@@ -93,6 +93,7 @@ docs/EVAL_TRENDS.md
 - export job 创建接口：`POST /exports/jobs`
 - export job 列表接口：`GET /exports/jobs`
 - export job 详情接口：`GET /exports/jobs/{job_id}`
+- export job 重试接口：`POST /exports/jobs/{job_id}/retry`
 - export job 下载接口：`GET /exports/jobs/{job_id}/download`
 - Prometheus 指标接口：`GET /metrics`
 - API key 鉴权：`Authorization: Bearer dev-key`
@@ -105,7 +106,7 @@ docs/EVAL_TRENDS.md
 - 基础 rate limit 中间件：默认关闭，可按 API key 哈希或客户端 IP 限流
 - HTTP 请求指标、RAG refusal 指标、无效 citation 指标、provider token/latency/cost 指标
 - OpenAI provider 错误会映射为结构化 API 错误、日志和 metrics
-- 异步导出 job 基础模型、API、worker 与下载接口：`export_jobs` 表和 `ExportJobRepository` 已支持 pending/running/succeeded/failed 状态流转，`/exports/jobs` 已支持创建、列表、详情和下载查询，`python -m backend.app.exporting.worker` 可执行一个 pending chat log 导出任务，`python -m backend.app.exporting.worker --loop` 可作为常驻 worker 轮询并落地 JSONL/CSV 文件；worker 会按 `EXPORT_JOB_RUNNING_TIMEOUT_SECONDS` 恢复长时间停留在 running 的任务，并按 `EXPORT_FILE_RETENTION_SECONDS` 清理过期导出文件
+- 异步导出 job 基础模型、API、worker 与下载接口：`export_jobs` 表和 `ExportJobRepository` 已支持 pending/running/succeeded/failed 状态流转，`/exports/jobs` 已支持创建、列表、详情、重试和下载查询，`python -m backend.app.exporting.worker` 可执行一个 pending chat log 导出任务，`python -m backend.app.exporting.worker --loop` 可作为常驻 worker 轮询并落地 JSONL/CSV 文件；worker 会按 `EXPORT_JOB_RUNNING_TIMEOUT_SECONDS` 恢复长时间停留在 running 的任务，并按 `EXPORT_FILE_RETENTION_SECONDS` 清理过期导出文件
 - Web UI：`GET /app/`，支持 session、history、SSE streaming chat、文档上传、reindex、workspace 创建、编辑、归档、恢复、workspace 搜索、分页、状态过滤、当前页批量归档/恢复和跨页匹配批量预览/确认、归档 workspace 写入控件禁用、只读 admin overview、chat log audit filters、chat log async export job creation/poll/download、chat log audit details、workspace operation audit filters 和 workspace operation audit details
 
 ### 数据库与迁移
@@ -1296,12 +1297,13 @@ Completed: 2026-05-20T09:51:56Z
 - chat log 审计导出基础版已完成：`GET /chat/logs/export` 支持同一组过滤参数，可导出 JSONL 或 CSV，Admin overview 可按当前过滤条件触发下载。
 - chat log 审计详情基础版已完成：每条最近日志可展开查看 session、request、citation、sources、refusal、retrieval、query rewrite、metadata filter、usage 和 cost。
 - export job 基础模型已完成：新增 `export_jobs` 表、`ExportJobRepository`、pending -> running -> succeeded/failed 状态流转和 worker claim 入口。
-- export job API 已完成：`POST /exports/jobs` 可按当前 `X-Workspace-ID` 创建 chat log 导出任务，`GET /exports/jobs` 支持 status/export_type 分页查询，`GET /exports/jobs/{job_id}` 可按 workspace 读取任务详情；现有 `/chat/logs/export` 仍保持同步。
+- export job API 已完成：`POST /exports/jobs` 可按当前 `X-Workspace-ID` 创建 chat log 导出任务，`GET /exports/jobs` 支持 status/export_type 分页查询，`GET /exports/jobs/{job_id}` 可按 workspace 读取任务详情，`POST /exports/jobs/{job_id}/retry` 可把当前 workspace 下 failed job 重置为 pending；现有 `/chat/logs/export` 仍保持同步。
 - export worker 基础版已完成：`backend.app.exporting.worker` 会 claim 一个 pending job，按 filters 查询 chat logs，复用同步导出的 JSONL/CSV 序列化，写入 `EXPORT_STORAGE_DIR`，并将 job 标记为 succeeded/failed。
 - export 下载接口和前端轮询已完成：`GET /exports/jobs/{job_id}/download` 只允许下载当前 workspace 下 succeeded job 的 `EXPORT_STORAGE_DIR` 内部文件，Admin export JSONL/CSV 按钮会创建 job、轮询详情并在 succeeded 后触发下载。
 - export worker 常驻服务和 production compose 编排已完成：`--loop` 模式按 `EXPORT_WORKER_POLL_INTERVAL_SECONDS` 轮询，`docker-compose.prod.yml` 增加 `export-worker` 服务，并让 API/worker 共享 `export_prod_data`。
 - export job running 超时恢复基础版已完成：worker 每轮 claim 前会按 `EXPORT_JOB_RUNNING_TIMEOUT_SECONDS` 将超时 running job 重置为 pending，便于 worker 崩溃或中断后的自动恢复。
 - export 文件过期清理基础版已完成：worker 每轮 claim 前会按 `EXPORT_FILE_RETENTION_SECONDS` 删除 `EXPORT_STORAGE_DIR` 顶层过期 `.jsonl` 和 `.csv` 文件，job metadata 保留用于审计。
+- export failed job 手动重试基础版已完成：`POST /exports/jobs/{job_id}/retry` 只允许重试 failed job，按 API key workspace 权限过滤，重试后由 worker 正常 claim。
 - 完整管理后台仍未完成：还缺少用户/角色/组织管理、更完整的批量运维操作和权限分层 UI。
 
 ### 生产部署
@@ -1432,19 +1434,20 @@ OPENAI_API_KEY
 34. 导出 worker 常驻服务和 production compose 编排。已完成。
 35. 导出任务运维补强：running 超时恢复。已完成。
 36. 导出任务运维补强：过期导出文件清理。已完成。
+37. 导出任务运维补强：失败任务手动重试。已完成。
 
 ## 14. 当前优先级建议
 
 建议下一步优先做：
 
 ```text
-导出任务运维补强：失败重试策略
+真实 OpenAI 端到端验证
 ```
 
 原因：
 
-- export job 表、迁移、repository、状态流转、创建/查询 API、worker 执行、文件落地、下载接口、前端轮询、常驻 worker、production compose 编排、running 超时恢复和过期文件清理已完成。
-- 下一步可以补充导出任务的失败任务重试策略，以及相应的运维文档/测试。
+- export job 表、迁移、repository、状态流转、创建/查询 API、worker 执行、文件落地、下载接口、前端轮询、常驻 worker、production compose 编排、running 超时恢复、过期文件清理和失败任务手动重试已完成。
+- 下一步可以使用 `.env` 中的真实 `OPENAI_API_KEY` 做 OpenAI embedding smoke、chunk reindex、generator smoke 和 eval gate，验证 fake provider 到真实 provider 的完整切换链路。
 
 以下命令是后续需要真实 provider 时的验证入口：
 

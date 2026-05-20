@@ -931,6 +931,73 @@ async def test_fail_export_job_marks_job_failed() -> None:
 
 
 @pytest.mark.asyncio
+async def test_retry_failed_export_job_marks_job_pending() -> None:
+    export_job = make_export_job_model(status="failed")
+    export_job.result_uri = "file://exports/failed.jsonl"
+    export_job.result_media_type = "application/x-ndjson"
+    export_job.result_size_bytes = 42
+    export_job.error_message = "permission denied"
+    export_job.started_at = datetime(2026, 5, 20, 8, 1, tzinfo=UTC)
+    export_job.completed_at = datetime(2026, 5, 20, 8, 2, tzinfo=UTC)
+    session = FakeAsyncSession(scalar_result=export_job)
+    repository = ExportJobRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.retry_failed_export_job(
+        job_id=export_job.id,
+        workspace_id="tenant-a",
+        commit=True,
+    )
+
+    assert result == export_job
+    assert export_job.status == "pending"
+    assert export_job.result_uri is None
+    assert export_job.result_media_type is None
+    assert export_job.result_size_bytes is None
+    assert export_job.error_message is None
+    assert export_job.started_at is None
+    assert export_job.completed_at is None
+    assert export_job.updated_at is not None
+    assert session.scalar_statement is not None
+    compiled = str(session.scalar_statement)
+    assert "export_jobs.id" in compiled
+    assert "export_jobs.workspace_id" in compiled
+    assert session.flushed is True
+    assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_export_job_returns_none_when_missing() -> None:
+    session = FakeAsyncSession(scalar_result=None)
+    repository = ExportJobRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.retry_failed_export_job(
+        job_id=uuid.UUID("55555555-5555-5555-5555-555555555555"),
+        workspace_id="tenant-a",
+        commit=True,
+    )
+
+    assert result is None
+    assert session.flushed is False
+    assert session.committed is False
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_export_job_rejects_non_failed_job() -> None:
+    export_job = make_export_job_model(status="pending")
+    session = FakeAsyncSession(scalar_result=export_job)
+    repository = ExportJobRepository(session)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="failed"):
+        await repository.retry_failed_export_job(
+            job_id=export_job.id,
+            workspace_id="tenant-a",
+        )
+
+    assert export_job.status == "pending"
+    assert session.flushed is False
+
+
+@pytest.mark.asyncio
 async def test_export_job_repository_rejects_invalid_state_transitions() -> None:
     export_job = make_export_job_model(status="succeeded")
     session = FakeAsyncSession(scalar_result=export_job)

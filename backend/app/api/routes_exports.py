@@ -128,6 +128,40 @@ async def get_export_job(
     return ExportJobResponse.from_model(export_job)
 
 
+@router.post(
+    "/jobs/{job_id}/retry",
+    response_model=ExportJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def retry_export_job(
+    job_id: uuid.UUID,
+    principal: Annotated[ApiPrincipal, Depends(require_api_key)],
+    export_job_repository: Annotated[
+        ExportJobRepository,
+        Depends(get_export_job_repository),
+    ],
+    workspace_id: Annotated[str | None, Header(alias="X-Workspace-ID")] = None,
+) -> ExportJobResponse:
+    normalized_workspace_id = resolve_workspace_id(principal, workspace_id)
+    try:
+        export_job = await export_job_repository.retry_failed_export_job(
+            job_id=job_id,
+            workspace_id=normalized_workspace_id,
+            commit=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="export job is not failed",
+        ) from exc
+    if export_job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="export job not found",
+        )
+    return ExportJobResponse.from_model(export_job)
+
+
 @router.get("/jobs/{job_id}/download")
 async def download_export_job(
     job_id: uuid.UUID,

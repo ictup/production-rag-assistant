@@ -32,6 +32,7 @@ class FakeExportJobRepository:
         self.create_calls: list[tuple[CreateExportJobInput, bool]] = []
         self.list_calls: list[tuple[str, int, int, str | None, str | None]] = []
         self.detail_calls: list[tuple[uuid.UUID, str | None]] = []
+        self.retry_calls: list[tuple[uuid.UUID, str | None, bool]] = []
 
     async def create_export_job(
         self,
@@ -68,6 +69,27 @@ class FakeExportJobRepository:
         workspace_id: str | None = None,
     ) -> ExportJob | None:
         self.detail_calls.append((job_id, workspace_id))
+        return self.detail_job
+
+    async def retry_failed_export_job(
+        self,
+        *,
+        job_id: uuid.UUID,
+        workspace_id: str | None = None,
+        commit: bool = False,
+    ) -> ExportJob | None:
+        self.retry_calls.append((job_id, workspace_id, commit))
+        if self.detail_job is None:
+            return None
+        if self.detail_job.status != "failed":
+            raise ValueError("export job must be failed to retry")
+        self.detail_job.status = "pending"
+        self.detail_job.result_uri = None
+        self.detail_job.result_media_type = None
+        self.detail_job.result_size_bytes = None
+        self.detail_job.error_message = None
+        self.detail_job.started_at = None
+        self.detail_job.completed_at = None
         return self.detail_job
 
 
@@ -161,6 +183,7 @@ def test_openapi_exposes_export_job_routes() -> None:
     paths = response.json()["paths"]
     assert "/exports/jobs" in paths
     assert "/exports/jobs/{job_id}" in paths
+    assert "/exports/jobs/{job_id}/retry" in paths
     assert "/exports/jobs/{job_id}/download" in paths
 
 
@@ -396,6 +419,85 @@ def test_get_export_job_returns_404_when_not_found() -> None:
     assert response.status_code == 404
     assert response.json() == {"detail": "export job not found"}
     assert fake_export_job_repository.detail_calls == [(job_id, "tenant-a")]
+
+
+def test_retry_export_job_resets_failed_job_to_pending_for_workspace() -> None:
+    job_id = uuid.UUID("55555555-5555-5555-5555-555555555555")
+    export_job = make_export_job_model(status="failed")
+    export_job.error_message = "permission denied"
+    export_job.started_at = datetime(2026, 5, 20, 8, 1, tzinfo=UTC)
+    export_job.completed_at = datetime(2026, 5, 20, 8, 2, tzinfo=UTC)
+    fake_export_job_repository = FakeExportJobRepository(detail_job=export_job)
+    client = build_client(fake_export_job_repository)
+
+    response = client.post(
+        f"/exports/jobs/{job_id}/retry",
+        headers={**AUTH_HEADERS, "X-Workspace-ID": "tenant-a"},
+    )
+
+    assert response.status_code == 202
+    assert fake_export_job_repository.retry_calls == [(job_id, "tenant-a", True)]
+    body = response.json()["job"]
+    assert body["id"] == str(job_id)
+    assert body["status"] == "pending"
+    assert body["error_message"] is None
+    assert body["started_at"] is None
+    assert body["completed_at"] is None
+
+
+def test_retry_export_job_returns_404_when_not_found() -> None:
+    job_id = uuid.UUID("55555555-5555-5555-5555-555555555555")
+    fake_export_job_repository = FakeExportJobRepository(detail_job=None)
+    client = build_client(fake_export_job_repository)
+
+    response = client.post(
+        f"/exports/jobs/{job_id}/retry",
+        headers={**AUTH_HEADERS, "X-Workspace-ID": "tenant-a"},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "export job not found"}
+    assert fake_export_job_repository.retry_calls == [(job_id, "tenant-a", True)]
+
+
+def test_retry_export_job_rejects_non_failed_job() -> None:
+    job_id = uuid.UUID("55555555-5555-5555-5555-555555555555")
+    fake_export_job_repository = FakeExportJobRepository(
+        detail_job=make_export_job_model(status="pending")
+    )
+    client = build_client(fake_export_job_repository)
+
+    response = client.post(
+        f"/exports/jobs/{job_id}/retry",
+        headers={**AUTH_HEADERS, "X-Workspace-ID": "tenant-a"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "export job is not failed"}
+    assert fake_export_job_repository.retry_calls == [(job_id, "tenant-a", True)]
+
+
+def test_retry_export_job_rejects_workspace_access_denied() -> None:
+    job_id = uuid.UUID("55555555-5555-5555-5555-555555555555")
+    fake_export_job_repository = FakeExportJobRepository(
+        detail_job=make_export_job_model(status="failed")
+    )
+    client = build_client(
+        fake_export_job_repository,
+        settings=Settings(
+            api_keys="dev-key",
+            api_key_workspace_access="dev-key=tenant-a",
+        ),
+    )
+
+    response = client.post(
+        f"/exports/jobs/{job_id}/retry",
+        headers={**AUTH_HEADERS, "X-Workspace-ID": "tenant-b"},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "workspace access denied"}
+    assert fake_export_job_repository.retry_calls == []
 
 
 def test_download_export_job_returns_file_for_succeeded_job(tmp_path: Path) -> None:

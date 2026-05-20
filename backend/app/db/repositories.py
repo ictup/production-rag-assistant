@@ -783,6 +783,33 @@ class ExportJobRepository:
             await self.session.commit()
         return job
 
+    async def retry_failed_export_job(
+        self,
+        *,
+        job_id: uuid.UUID,
+        workspace_id: str | None = None,
+        commit: bool = False,
+    ) -> ExportJob | None:
+        job = await self.get_export_job(job_id=job_id, workspace_id=workspace_id)
+        if job is None:
+            return None
+        if job.status != "failed":
+            raise ValueError("export job must be failed to retry")
+
+        now = datetime.now(UTC)
+        job.status = "pending"
+        job.result_uri = None
+        job.result_media_type = None
+        job.result_size_bytes = None
+        job.error_message = None
+        job.started_at = None
+        job.completed_at = None
+        job.updated_at = now
+        await self.session.flush()
+        if commit:
+            await self.session.commit()
+        return job
+
     async def _load_export_job(self, job_id: uuid.UUID | None) -> ExportJob | None:
         if job_id is None:
             raise ValueError("job_id is required")

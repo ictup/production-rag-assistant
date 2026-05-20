@@ -282,7 +282,9 @@ In production compose, the API and `export-worker` services share the
 `export_prod_data` volume so the API can download files written by the worker.
 Admin export buttons create a job, poll its status, and download the completed
 file through `/exports/jobs/{job_id}/download`. The existing `/chat/logs/export`
-route remains synchronous for compatibility.
+route remains synchronous for compatibility. Failed export jobs can be retried
+explicitly with `POST /exports/jobs/{job_id}/retry`, which resets the job to
+`pending` for the worker to claim again.
 
 Create and inspect an export job:
 
@@ -332,6 +334,14 @@ curl.exe "http://127.0.0.1:8000/exports/jobs/<job-id>/download" `
   -H "Authorization: Bearer dev-key" `
   -H "X-Workspace-ID: public" `
   -o chat-logs.jsonl
+```
+
+Retry a failed export job:
+
+```powershell
+curl.exe -X POST "http://127.0.0.1:8000/exports/jobs/<job-id>/retry" `
+  -H "Authorization: Bearer dev-key" `
+  -H "X-Workspace-ID: public"
 ```
 
 Archived workspaces remain readable for audit and recovery, but write-oriented
