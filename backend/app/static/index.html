@@ -257,6 +257,23 @@
                 <button id="admin-next-workspaces" type="button">Next</button>
               </div>
             </div>
+            <form
+              id="admin-workspace-search-form"
+              class="admin-workspace-search-form"
+            >
+              <label>
+                Search
+                <input
+                  id="admin-workspace-search"
+                  name="admin-workspace-search"
+                  type="search"
+                  autocomplete="off"
+                  placeholder="ID, name, or description"
+                />
+              </label>
+              <button id="admin-search-workspaces" type="submit">Search</button>
+              <button id="admin-clear-workspace-search" type="button">Clear</button>
+            </form>
             <form id="admin-workspace-form" class="admin-create-form">
               <label>
                 Workspace ID

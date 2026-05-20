@@ -54,11 +54,13 @@ async def list_workspaces(
     repository: Annotated[WorkspaceRepository, Depends(get_workspace_repository)],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
+    q: Annotated[str | None, Query(max_length=256)] = None,
 ) -> WorkspacesResponse:
     result = await repository.list_workspaces(
         workspace_ids=principal.allowed_workspaces,
         limit=limit,
         offset=offset,
+        search=q,
     )
     return WorkspacesResponse.from_result(
         limit=limit,

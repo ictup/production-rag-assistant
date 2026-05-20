@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.db.models import (
@@ -188,6 +188,7 @@ class WorkspaceRepository:
         limit: int = 20,
         offset: int = 0,
         workspace_ids: frozenset[str] | None = None,
+        search: str | None = None,
     ) -> WorkspaceListResult:
         if limit <= 0:
             raise ValueError("limit must be greater than zero")
@@ -196,9 +197,18 @@ class WorkspaceRepository:
         if workspace_ids == frozenset():
             return WorkspaceListResult(total=0, workspaces=[])
 
-        filters = ()
+        filters = []
         if workspace_ids is not None:
-            filters = (Workspace.id.in_(sorted(workspace_ids)),)
+            filters.append(Workspace.id.in_(sorted(workspace_ids)))
+        search_query = normalize_optional_text(search)
+        if search_query is not None:
+            filters.append(
+                or_(
+                    Workspace.id.icontains(search_query, autoescape=True),
+                    Workspace.name.icontains(search_query, autoescape=True),
+                    Workspace.description.icontains(search_query, autoescape=True),
+                )
+            )
 
         total_statement = select(func.count()).select_from(Workspace).where(*filters)
         total = await self.session.scalar(total_statement)

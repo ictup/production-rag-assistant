@@ -94,7 +94,7 @@ docs/EVAL_TRENDS.md
 - 基础 rate limit 中间件：默认关闭，可按 API key 哈希或客户端 IP 限流
 - HTTP 请求指标、RAG refusal 指标、无效 citation 指标、provider token/latency/cost 指标
 - OpenAI provider 错误会映射为结构化 API 错误、日志和 metrics
-- Web UI：`GET /app/`，支持 session、history、SSE streaming chat、文档上传、reindex、workspace 创建、编辑、归档、恢复、workspace 分页和状态过滤、归档 workspace 写入控件禁用、只读 admin overview、chat log audit filters、chat log audit export 和 chat log audit details
+- Web UI：`GET /app/`，支持 session、history、SSE streaming chat、文档上传、reindex、workspace 创建、编辑、归档、恢复、workspace 搜索、分页和状态过滤、归档 workspace 写入控件禁用、只读 admin overview、chat log audit filters、chat log audit export 和 chat log audit details
 
 ### 数据库与迁移
 
@@ -555,6 +555,13 @@ curl.exe -X POST http://127.0.0.1:8000/workspaces `
 
 ```powershell
 curl.exe "http://127.0.0.1:8000/workspaces?limit=20&offset=0" `
+  -H "Authorization: Bearer dev-key"
+```
+
+按 ID、名称或描述搜索 workspace：
+
+```powershell
+curl.exe "http://127.0.0.1:8000/workspaces?limit=20&offset=0&q=tenant" `
   -H "Authorization: Bearer dev-key"
 ```
 
@@ -1220,6 +1227,7 @@ Completed: 2026-05-20T09:51:56Z
 - workspace 归档状态 UX guard 已完成：当前 workspace 已归档时，Web UI 会显示只读提示，并禁用 chat、session 创建、document upload 和 reindex 写入控件。
 - workspace 列表状态过滤已完成：Admin overview 支持 All / Active / Archived 过滤。
 - workspace 列表分页基础版已完成：Admin overview 使用 `/workspaces?limit&offset` 做 Previous/Next 翻页。
+- workspace 搜索基础版已完成：`GET /workspaces?q=...` 会按 workspace ID、name 和 description 过滤，Admin overview 可搜索并重置分页。
 - chat log 审计过滤基础版已完成：`GET /chat/logs` 支持 `offset`、`session_id`、`request_id`、`refusal_only`、`citation_valid`，Admin overview 支持对应筛选和 Previous/Next 翻页。
 - chat log 审计导出基础版已完成：`GET /chat/logs/export` 支持同一组过滤参数，可导出 JSONL 或 CSV，Admin overview 可按当前过滤条件触发下载。
 - chat log 审计详情基础版已完成：每条最近日志可展开查看 session、request、citation、sources、refusal、retrieval、query rewrite、metadata filter、usage 和 cost。
@@ -1335,20 +1343,21 @@ OPENAI_API_KEY
 17. workspace 归档状态前端写入禁用。已完成。
 18. workspace 列表状态过滤。已完成。
 19. workspace 列表分页基础版。已完成。
+20. workspace 搜索基础版。已完成。
 
 ## 14. 当前优先级建议
 
 建议下一步优先做：
 
 ```text
-workspace admin search
+workspace 后端状态过滤
 ```
 
 原因：
 
-- workspace 归档/恢复 API、Admin UI、后端写保护、前端写入禁用、状态过滤和分页已完成。
-- 当前状态过滤是当前页内过滤，不是后端全量筛选。
-- 下一步可以增加 workspace 搜索，避免多租户数量增长后只能靠翻页查找。
+- workspace 归档/恢复 API、Admin UI、后端写保护、前端写入禁用、状态过滤、分页和搜索已完成。
+- 当前状态过滤仍是当前页内过滤，不是后端全量筛选。
+- 下一步可以把 Active / Archived 状态过滤下沉到后端，避免多租户数量增长后过滤结果只覆盖当前页。
 
 以下命令是后续需要真实 provider 时的验证入口：
 

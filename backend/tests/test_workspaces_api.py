@@ -38,7 +38,7 @@ class FakeWorkspaceRepository:
         self.update_calls: list[tuple[UpdateWorkspaceInput, bool]] = []
         self.archive_calls: list[tuple[ArchiveWorkspaceInput, bool]] = []
         self.restore_calls: list[tuple[str, bool]] = []
-        self.list_calls: list[tuple[frozenset[str] | None, int, int]] = []
+        self.list_calls: list[tuple[frozenset[str] | None, int, int, str | None]] = []
         self.detail_calls: list[str] = []
 
     async def create_workspace(
@@ -56,8 +56,9 @@ class FakeWorkspaceRepository:
         limit: int = 20,
         offset: int = 0,
         workspace_ids: frozenset[str] | None = None,
+        search: str | None = None,
     ) -> WorkspaceListResult:
-        self.list_calls.append((workspace_ids, limit, offset))
+        self.list_calls.append((workspace_ids, limit, offset, search))
         return self.list_result
 
     async def get_workspace(self, *, workspace_id: str) -> Workspace | None:
@@ -213,13 +214,27 @@ def test_list_workspaces_route_returns_paginated_workspaces() -> None:
     )
 
     assert response.status_code == 200
-    assert fake_repository.list_calls == [(None, 10, 5)]
+    assert fake_repository.list_calls == [(None, 10, 5, None)]
     body = response.json()
     assert body["total"] == 1
     assert body["count"] == 1
     assert body["limit"] == 10
     assert body["offset"] == 5
     assert body["workspaces"][0]["id"] == "tenant-a"
+
+
+def test_list_workspaces_route_forwards_search_query() -> None:
+    fake_repository = FakeWorkspaceRepository()
+    client = build_client(fake_repository)
+
+    response = client.get(
+        "/workspaces",
+        headers=AUTH_HEADERS,
+        params={"q": " Tenant "},
+    )
+
+    assert response.status_code == 200
+    assert fake_repository.list_calls == [(None, 20, 0, " Tenant ")]
 
 
 def test_list_workspaces_route_filters_to_principal_allowed_workspaces() -> None:
@@ -238,7 +253,9 @@ def test_list_workspaces_route_filters_to_principal_allowed_workspaces() -> None
     )
 
     assert response.status_code == 200
-    assert fake_repository.list_calls == [(frozenset({"tenant-a", "tenant-b"}), 20, 0)]
+    assert fake_repository.list_calls == [
+        (frozenset({"tenant-a", "tenant-b"}), 20, 0, None)
+    ]
 
 
 def test_get_workspace_route_returns_workspace() -> None:

@@ -35,6 +35,10 @@ def test_static_app_serves_index_html() -> None:
     assert 'id="admin-prev-workspaces"' in response.text
     assert 'id="admin-workspace-page-info"' in response.text
     assert 'id="admin-next-workspaces"' in response.text
+    assert 'id="admin-workspace-search-form"' in response.text
+    assert 'id="admin-workspace-search"' in response.text
+    assert 'id="admin-search-workspaces"' in response.text
+    assert 'id="admin-clear-workspace-search"' in response.text
     assert 'id="admin-workspace-edit-form"' in response.text
     assert 'id="admin-edit-workspace-metadata"' in response.text
     assert 'id="admin-archive-workspace-reason"' in response.text
@@ -67,6 +71,7 @@ def test_static_app_serves_assets() -> None:
     assert "restoreWorkspaceFromAdmin" in script_response.text
     assert "workspaceLifecycleText" in script_response.text
     assert "setAdminWorkspaceFilter" in script_response.text
+    assert "clearAdminWorkspaceSearch" in script_response.text
     assert "buildWorkspacesUrl" in script_response.text
     assert "filteredAdminWorkspaces" in script_response.text
     assert "renderAdminWorkspacePagination" in script_response.text
@@ -88,6 +93,7 @@ def test_static_app_serves_assets() -> None:
     assert "formatUsage" in script_response.text
     assert "formatCost" in script_response.text
     assert "/workspaces?" in script_response.text
+    assert 'params.set("q", state.admin.workspaceSearch)' in script_response.text
     assert "workspaceOffset" in script_response.text
     assert "/archive" in script_response.text
     assert "/restore" in script_response.text
@@ -101,6 +107,7 @@ def test_static_app_serves_assets() -> None:
     assert ".workspace-archive-banner" in style_response.text
     assert ".admin-panel" in style_response.text
     assert ".admin-workspace-filter-actions" in style_response.text
+    assert ".admin-workspace-search-form" in style_response.text
     assert ".admin-create-form" in style_response.text
     assert ".admin-edit-form" in style_response.text
     assert ".admin-workspace-actions" in style_response.text

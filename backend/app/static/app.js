@@ -12,6 +12,7 @@ const state = {
     logLimit: 5,
     logOffset: 0,
     workspaceFilter: "all",
+    workspaceSearch: "",
     filters: {
       requestId: "",
       sessionId: "",
@@ -90,6 +91,11 @@ const els = {
   adminPrevWorkspaces: document.querySelector("#admin-prev-workspaces"),
   adminNextWorkspaces: document.querySelector("#admin-next-workspaces"),
   adminWorkspacePageInfo: document.querySelector("#admin-workspace-page-info"),
+  adminWorkspaceSearchForm: document.querySelector("#admin-workspace-search-form"),
+  adminWorkspaceSearch: document.querySelector("#admin-workspace-search"),
+  adminClearWorkspaceSearch: document.querySelector(
+    "#admin-clear-workspace-search",
+  ),
   adminWorkspaceList: document.querySelector("#admin-workspace-list"),
   adminPrevLogs: document.querySelector("#admin-prev-logs"),
   adminNextLogs: document.querySelector("#admin-next-logs"),
@@ -206,6 +212,18 @@ function bindEvents() {
 
   els.adminNextWorkspaces.addEventListener("click", () => {
     state.admin.workspaceOffset += state.admin.workspaceLimit;
+    void loadAdminOverview();
+  });
+
+  els.adminWorkspaceSearchForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.admin.workspaceSearch = els.adminWorkspaceSearch.value.trim();
+    state.admin.workspaceOffset = 0;
+    void loadAdminOverview();
+  });
+
+  els.adminClearWorkspaceSearch.addEventListener("click", () => {
+    clearAdminWorkspaceSearch();
     void loadAdminOverview();
   });
 
@@ -363,6 +381,7 @@ async function createWorkspaceFromAdmin() {
     els.workspaceId.value = state.workspaceId;
     localStorage.setItem("rag.workspaceId", state.workspaceId);
     state.admin.workspaceOffset = 0;
+    clearAdminWorkspaceSearch();
     state.admin.logOffset = 0;
     if (changed) {
       clearSelectedSession();
@@ -500,6 +519,9 @@ function buildWorkspacesUrl() {
     limit: String(state.admin.workspaceLimit),
     offset: String(state.admin.workspaceOffset),
   });
+  if (state.admin.workspaceSearch) {
+    params.set("q", state.admin.workspaceSearch);
+  }
   return `/workspaces?${params.toString()}`;
 }
 
@@ -553,6 +575,12 @@ function clearAdminFilters() {
   els.adminSessionId.value = "";
   els.adminCitationValid.value = "";
   els.adminRefusalOnly.checked = false;
+}
+
+function clearAdminWorkspaceSearch() {
+  state.admin.workspaceSearch = "";
+  els.adminWorkspaceSearch.value = "";
+  state.admin.workspaceOffset = 0;
 }
 
 function syncWorkspaceEditForm() {
@@ -846,8 +874,11 @@ function renderAdminPagination({ count, limit, offset }) {
 function renderAdminWorkspacePagination({ count, total, limit, offset }) {
   const start = total > 0 ? offset + 1 : 0;
   const end = total > 0 ? offset + count : 0;
+  const emptyLabel = state.admin.workspaceSearch
+    ? "No matching workspaces"
+    : "No workspaces";
   els.adminWorkspacePageInfo.textContent =
-    total > 0 ? `Workspaces ${start}-${end} of ${total}` : "No workspaces";
+    total > 0 ? `Workspaces ${start}-${end} of ${total}` : emptyLabel;
   els.adminPrevWorkspaces.disabled = offset <= 0;
   els.adminNextWorkspaces.disabled = offset + count >= total || count < limit;
 }
@@ -886,6 +917,9 @@ function filteredAdminWorkspaces() {
 }
 
 function workspaceFilterEmptyMessage() {
+  if (state.admin.workspaceSearch && !state.admin.workspaces.length) {
+    return "No matching workspaces";
+  }
   if (state.admin.workspaceFilter === "active") {
     return "No active workspaces";
   }
@@ -898,7 +932,8 @@ function workspaceFilterEmptyMessage() {
 function renderAdminWorkspaces() {
   els.adminWorkspaceList.innerHTML = "";
   const workspaces = filteredAdminWorkspaces();
-  els.adminWorkspaceFilterSummary.textContent = `Showing ${workspaces.length} of ${state.admin.workspaces.length} on this page`;
+  const searchSuffix = state.admin.workspaceSearch ? " matching search" : "";
+  els.adminWorkspaceFilterSummary.textContent = `Showing ${workspaces.length} of ${state.admin.workspaces.length} on this page${searchSuffix}`;
   if (!workspaces.length) {
     const empty = document.createElement("div");
     empty.className = "empty";

@@ -526,6 +526,28 @@ textarea:focus {
   padding: 10px;
 }
 
+.admin-workspace-search-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: end;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  padding: 10px;
+}
+
+.admin-workspace-search-form label {
+  min-width: 0;
+}
+
+#admin-search-workspaces {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 750;
+}
+
 .admin-create-form button {
   border-color: var(--accent);
   background: var(--accent);
@@ -832,5 +854,13 @@ textarea:focus {
 
   .composer {
     grid-template-columns: 1fr;
+  }
+
+  .admin-workspace-search-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-workspace-search-form label {
+    grid-column: 1 / -1;
   }
 }

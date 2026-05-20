@@ -268,6 +268,28 @@ async def test_list_workspaces_filters_allowed_workspace_ids() -> None:
 
 
 @pytest.mark.asyncio
+async def test_list_workspaces_filters_by_search_query() -> None:
+    workspace = make_workspace_model()
+    session = FakeAsyncSession(
+        scalar_result=1,
+        scalars_result=[workspace],
+    )
+    repository = WorkspaceRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.list_workspaces(search=" Tenant ")
+
+    assert result.total == 1
+    assert result.workspaces == [workspace]
+    assert session.scalar_statement is not None
+    assert session.scalars_statement is not None
+    compiled = str(session.scalars_statement)
+    assert "lower(workspaces.id)" in compiled
+    assert "lower(workspaces.name)" in compiled
+    assert "lower(workspaces.description)" in compiled
+    assert "ORDER BY workspaces.updated_at DESC" in compiled
+
+
+@pytest.mark.asyncio
 async def test_list_workspaces_returns_empty_without_query_for_empty_set() -> None:
     session = FakeAsyncSession()
     repository = WorkspaceRepository(session)  # type: ignore[arg-type]
