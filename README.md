@@ -153,7 +153,7 @@ Run the eval gate:
 uv run python -m evals.run --format summary --fail-on-failure --no-output
 ```
 
-Current local baseline: `511 passed`.
+Current local baseline: `518 passed`.
 
 ## Configuration Model
 
@@ -261,6 +261,13 @@ curl.exe -X POST http://127.0.0.1:8000/workspaces/bulk/restore `
 Archive and restore operations write `workspace_audit_logs` records with the
 request id, hashed API key, action, affected workspace ids, and operation
 metadata.
+
+Query workspace operation audit logs:
+
+```powershell
+curl.exe "http://127.0.0.1:8000/workspaces/audit-logs?action=archive&workspace_id=tenant-a&limit=20&offset=0" `
+  -H "Authorization: Bearer dev-key"
+```
 
 Archived workspaces remain readable for audit and recovery, but write-oriented
 operations return `409 workspace archived`. This includes chat, streaming chat,

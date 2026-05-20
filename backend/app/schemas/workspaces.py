@@ -3,10 +3,11 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from backend.app.db.models import Workspace
+from backend.app.db.models import Workspace, WorkspaceAuditLog
 from backend.app.db.repositories import (
     BulkWorkspaceOperationResult,
     CreateWorkspaceResult,
+    WorkspaceAuditLogListResult,
     WorkspaceListResult,
 )
 
@@ -205,6 +206,58 @@ class WorkspaceResponse(BaseModel):
     @classmethod
     def from_model(cls, workspace: Workspace) -> "WorkspaceResponse":
         return cls(workspace=WorkspaceItem.from_model(workspace))
+
+
+class WorkspaceAuditLogItem(BaseModel):
+    id: str
+    request_id: str
+    actor_hash: str
+    action: str
+    workspace_ids: list[str]
+    workspace_count: int = Field(ge=0)
+    metadata: dict[str, Any]
+    created_at: datetime
+
+    @classmethod
+    def from_model(cls, audit_log: WorkspaceAuditLog) -> "WorkspaceAuditLogItem":
+        return cls(
+            id=str(audit_log.id),
+            request_id=audit_log.request_id,
+            actor_hash=audit_log.actor_hash,
+            action=audit_log.action,
+            workspace_ids=list(audit_log.workspace_ids),
+            workspace_count=audit_log.workspace_count,
+            metadata=dict(audit_log.metadata_),
+            created_at=audit_log.created_at,
+        )
+
+
+class WorkspaceAuditLogsResponse(BaseModel):
+    total: int = Field(ge=0)
+    count: int = Field(ge=0)
+    limit: int = Field(gt=0)
+    offset: int = Field(ge=0)
+    audit_logs: list[WorkspaceAuditLogItem]
+
+    @classmethod
+    def from_result(
+        cls,
+        *,
+        limit: int,
+        offset: int,
+        result: WorkspaceAuditLogListResult,
+    ) -> "WorkspaceAuditLogsResponse":
+        audit_logs = [
+            WorkspaceAuditLogItem.from_model(audit_log)
+            for audit_log in result.audit_logs
+        ]
+        return cls(
+            total=result.total,
+            count=len(audit_logs),
+            limit=limit,
+            offset=offset,
+            audit_logs=audit_logs,
+        )
 
 
 class BulkWorkspaceOperationResponse(BaseModel):

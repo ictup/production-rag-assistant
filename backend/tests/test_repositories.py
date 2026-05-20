@@ -184,6 +184,19 @@ def make_workspace_model(*, workspace_id: str = "tenant-a") -> Workspace:
     )
 
 
+def make_workspace_audit_log_model() -> WorkspaceAuditLog:
+    return WorkspaceAuditLog(
+        id=uuid.UUID("44444444-4444-4444-4444-444444444444"),
+        request_id="request-1",
+        actor_hash="a" * 64,
+        action="archive",
+        workspace_ids=["tenant-a", "tenant-b"],
+        workspace_count=2,
+        metadata_={"mode": "explicit_ids"},
+        created_at=datetime(2026, 5, 20, 8, 0, tzinfo=UTC),
+    )
+
+
 @pytest.mark.asyncio
 async def test_create_workspace_adds_workspace_model() -> None:
     session = FakeAsyncSession()
@@ -622,6 +635,65 @@ async def test_create_workspace_audit_log_rejects_empty_workspace_ids() -> None:
 
     assert session.added == []
     assert session.flushed is False
+
+
+@pytest.mark.asyncio
+async def test_list_workspace_audit_logs_applies_filters() -> None:
+    audit_log = make_workspace_audit_log_model()
+    session = FakeAsyncSession(scalar_result=1, scalars_result=[audit_log])
+    repository = WorkspaceRepository(session)  # type: ignore[arg-type]
+    created_from = datetime(2026, 5, 20, 7, 0, tzinfo=UTC)
+    created_to = datetime(2026, 5, 20, 9, 0, tzinfo=UTC)
+
+    result = await repository.list_workspace_audit_logs(
+        limit=10,
+        offset=5,
+        action=" archive ",
+        workspace_id=" tenant-a ",
+        request_id=" request-1 ",
+        created_from=created_from,
+        created_to=created_to,
+        allowed_workspaces=frozenset({"tenant-a", "tenant-b"}),
+    )
+
+    assert result.total == 1
+    assert result.audit_logs == [audit_log]
+    assert session.scalar_statement is not None
+    assert session.scalars_statement is not None
+    compiled = str(session.scalars_statement)
+    assert "workspace_audit_logs.action" in compiled
+    assert "workspace_audit_logs.workspace_ids" in compiled
+    assert "workspace_audit_logs.request_id" in compiled
+    assert "workspace_audit_logs.created_at >=" in compiled
+    assert "workspace_audit_logs.created_at <=" in compiled
+    assert "ORDER BY workspace_audit_logs.created_at DESC" in compiled
+
+
+@pytest.mark.asyncio
+async def test_list_workspace_audit_logs_returns_empty_for_empty_allowed_set() -> None:
+    session = FakeAsyncSession()
+    repository = WorkspaceRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.list_workspace_audit_logs(
+        allowed_workspaces=frozenset()
+    )
+
+    assert result.total == 0
+    assert result.audit_logs == []
+    assert session.scalar_statement is None
+    assert session.scalars_statement is None
+
+
+@pytest.mark.asyncio
+async def test_list_workspace_audit_logs_rejects_invalid_pagination() -> None:
+    session = FakeAsyncSession()
+    repository = WorkspaceRepository(session)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="limit"):
+        await repository.list_workspace_audit_logs(limit=0)
+
+    with pytest.raises(ValueError, match="offset"):
+        await repository.list_workspace_audit_logs(offset=-1)
 
 
 @pytest.mark.asyncio

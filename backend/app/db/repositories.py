@@ -117,6 +117,12 @@ class WorkspaceListResult:
 
 
 @dataclass(frozen=True)
+class WorkspaceAuditLogListResult:
+    total: int
+    audit_logs: list[WorkspaceAuditLog]
+
+
+@dataclass(frozen=True)
 class DocumentSummary:
     id: uuid.UUID
     workspace_id: str
@@ -460,6 +466,67 @@ class WorkspaceRepository:
         if commit:
             await self.session.commit()
         return audit_log
+
+    async def list_workspace_audit_logs(
+        self,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+        action: str | None = None,
+        workspace_id: str | None = None,
+        request_id: str | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+        allowed_workspaces: frozenset[str] | None = None,
+    ) -> WorkspaceAuditLogListResult:
+        if limit <= 0:
+            raise ValueError("limit must be greater than zero")
+        if offset < 0:
+            raise ValueError("offset must not be negative")
+        if allowed_workspaces == frozenset():
+            return WorkspaceAuditLogListResult(total=0, audit_logs=[])
+
+        filters = []
+        normalized_action = normalize_optional_text(action)
+        if normalized_action is not None:
+            filters.append(WorkspaceAuditLog.action == normalized_action)
+
+        normalized_workspace_id = normalize_optional_text(workspace_id)
+        if normalized_workspace_id is not None:
+            filters.append(
+                WorkspaceAuditLog.workspace_ids.contains([normalized_workspace_id])
+            )
+        if allowed_workspaces is not None:
+            filters.append(
+                WorkspaceAuditLog.workspace_ids.contained_by(
+                    sorted(allowed_workspaces)
+                )
+            )
+
+        normalized_request_id = normalize_optional_text(request_id)
+        if normalized_request_id is not None:
+            filters.append(WorkspaceAuditLog.request_id == normalized_request_id)
+        if created_from is not None:
+            filters.append(WorkspaceAuditLog.created_at >= created_from)
+        if created_to is not None:
+            filters.append(WorkspaceAuditLog.created_at <= created_to)
+
+        total_statement = (
+            select(func.count()).select_from(WorkspaceAuditLog).where(*filters)
+        )
+        total = await self.session.scalar(total_statement)
+        statement = (
+            select(WorkspaceAuditLog)
+            .where(*filters)
+            .order_by(WorkspaceAuditLog.created_at.desc(), WorkspaceAuditLog.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        audit_logs = list((await self.session.scalars(statement)).all())
+        return WorkspaceAuditLogListResult(
+            total=int(total or 0),
+            audit_logs=audit_logs,
+        )
 
 
 class DocumentRepository:

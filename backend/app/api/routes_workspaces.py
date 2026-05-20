@@ -1,3 +1,4 @@
+from datetime import datetime
 from hashlib import sha256
 from typing import Annotated
 
@@ -25,6 +26,7 @@ from backend.app.schemas.workspaces import (
     CreateWorkspaceRequest,
     CreateWorkspaceResponse,
     UpdateWorkspaceRequest,
+    WorkspaceAuditLogsResponse,
     WorkspaceResponse,
     WorkspacesResponse,
     WorkspaceStatus,
@@ -79,6 +81,47 @@ async def list_workspaces(
         archived=workspace_status_to_archived_filter(workspace_status),
     )
     return WorkspacesResponse.from_result(
+        limit=limit,
+        offset=offset,
+        result=result,
+    )
+
+
+@router.get("/workspaces/audit-logs", response_model=WorkspaceAuditLogsResponse)
+async def list_workspace_audit_logs(
+    principal: Annotated[ApiPrincipal, Depends(require_api_key)],
+    repository: Annotated[WorkspaceRepository, Depends(get_workspace_repository)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    action: Annotated[str | None, Query(max_length=64)] = None,
+    workspace_id: Annotated[str | None, Query(max_length=128)] = None,
+    request_id: Annotated[str | None, Query(max_length=256)] = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+) -> WorkspaceAuditLogsResponse:
+    if created_from is not None and created_to is not None:
+        if created_to < created_from:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="created_to must be greater than or equal to created_from",
+            )
+
+    normalized_workspace_id = (
+        resolve_workspace_id(principal, workspace_id)
+        if workspace_id is not None
+        else None
+    )
+    result = await repository.list_workspace_audit_logs(
+        limit=limit,
+        offset=offset,
+        action=action,
+        workspace_id=normalized_workspace_id,
+        request_id=request_id,
+        created_from=created_from,
+        created_to=created_to,
+        allowed_workspaces=principal.allowed_workspaces,
+    )
+    return WorkspaceAuditLogsResponse.from_result(
         limit=limit,
         offset=offset,
         result=result,

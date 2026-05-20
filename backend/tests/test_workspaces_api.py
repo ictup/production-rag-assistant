@@ -1,3 +1,4 @@
+import uuid
 from datetime import UTC, datetime
 from hashlib import sha256
 
@@ -5,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.api import routes_workspaces
 from backend.app.core.config import Settings, get_settings
-from backend.app.db.models import Workspace
+from backend.app.db.models import Workspace, WorkspaceAuditLog
 from backend.app.db.repositories import (
     ArchiveWorkspaceInput,
     BulkWorkspaceOperationResult,
@@ -13,6 +14,7 @@ from backend.app.db.repositories import (
     CreateWorkspaceInput,
     CreateWorkspaceResult,
     UpdateWorkspaceInput,
+    WorkspaceAuditLogListResult,
     WorkspaceListResult,
 )
 from backend.app.main import create_app
@@ -26,6 +28,7 @@ class FakeWorkspaceRepository:
         *,
         create_result: CreateWorkspaceResult | None = None,
         list_result: WorkspaceListResult | None = None,
+        audit_list_result: WorkspaceAuditLogListResult | None = None,
         detail_workspace: Workspace | None = None,
         bulk_missing_ids: list[str] | None = None,
     ) -> None:
@@ -36,6 +39,10 @@ class FakeWorkspaceRepository:
         self.list_result = list_result or WorkspaceListResult(
             total=0,
             workspaces=[],
+        )
+        self.audit_list_result = audit_list_result or WorkspaceAuditLogListResult(
+            total=0,
+            audit_logs=[],
         )
         self.detail_workspace = detail_workspace
         self.bulk_missing_ids = bulk_missing_ids or []
@@ -48,6 +55,18 @@ class FakeWorkspaceRepository:
         self.audit_calls: list[tuple[CreateWorkspaceAuditLogInput, bool]] = []
         self.list_calls: list[
             tuple[frozenset[str] | None, int, int, str | None, bool | None]
+        ] = []
+        self.audit_list_calls: list[
+            tuple[
+                int,
+                int,
+                str | None,
+                str | None,
+                str | None,
+                datetime | None,
+                datetime | None,
+                frozenset[str] | None,
+            ]
         ] = []
         self.detail_calls: list[str] = []
 
@@ -71,6 +90,32 @@ class FakeWorkspaceRepository:
     ) -> WorkspaceListResult:
         self.list_calls.append((workspace_ids, limit, offset, search, archived))
         return self.list_result
+
+    async def list_workspace_audit_logs(
+        self,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+        action: str | None = None,
+        workspace_id: str | None = None,
+        request_id: str | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+        allowed_workspaces: frozenset[str] | None = None,
+    ) -> WorkspaceAuditLogListResult:
+        self.audit_list_calls.append(
+            (
+                limit,
+                offset,
+                action,
+                workspace_id,
+                request_id,
+                created_from,
+                created_to,
+                allowed_workspaces,
+            )
+        )
+        return self.audit_list_result
 
     async def get_workspace(self, *, workspace_id: str) -> Workspace | None:
         self.detail_calls.append(workspace_id)
@@ -176,6 +221,19 @@ def make_workspace_model(*, workspace_id: str = "tenant-a") -> Workspace:
         metadata_={"tier": "internal"},
         created_at=datetime(2026, 5, 18, 8, 0, tzinfo=UTC),
         updated_at=datetime(2026, 5, 18, 9, 0, tzinfo=UTC),
+    )
+
+
+def make_workspace_audit_log_model() -> WorkspaceAuditLog:
+    return WorkspaceAuditLog(
+        id=uuid.UUID("44444444-4444-4444-4444-444444444444"),
+        request_id="request-1",
+        actor_hash="a" * 64,
+        action="archive",
+        workspace_ids=["tenant-a", "tenant-b"],
+        workspace_count=2,
+        metadata_={"mode": "explicit_ids", "reason": "Cleanup"},
+        created_at=datetime(2026, 5, 20, 8, 0, tzinfo=UTC),
     )
 
 
@@ -374,6 +432,126 @@ def test_list_workspaces_route_filters_to_principal_allowed_workspaces() -> None
     assert fake_repository.list_calls == [
         (frozenset({"tenant-a", "tenant-b"}), 20, 0, None, None)
     ]
+
+
+def test_list_workspace_audit_logs_route_returns_filtered_logs() -> None:
+    audit_log = make_workspace_audit_log_model()
+    fake_repository = FakeWorkspaceRepository(
+        audit_list_result=WorkspaceAuditLogListResult(
+            total=1,
+            audit_logs=[audit_log],
+        )
+    )
+    client = build_client(fake_repository)
+
+    response = client.get(
+        "/workspaces/audit-logs",
+        headers=AUTH_HEADERS,
+        params={
+            "limit": 10,
+            "offset": 5,
+            "action": "archive",
+            "workspace_id": "tenant-a",
+            "request_id": "request-1",
+            "created_from": "2026-05-20T07:00:00Z",
+            "created_to": "2026-05-20T09:00:00Z",
+        },
+    )
+
+    assert response.status_code == 200
+    created_from = datetime(2026, 5, 20, 7, 0, tzinfo=UTC)
+    created_to = datetime(2026, 5, 20, 9, 0, tzinfo=UTC)
+    assert fake_repository.audit_list_calls == [
+        (10, 5, "archive", "tenant-a", "request-1", created_from, created_to, None)
+    ]
+    body = response.json()
+    assert body["total"] == 1
+    assert body["count"] == 1
+    assert body["limit"] == 10
+    assert body["offset"] == 5
+    assert body["audit_logs"] == [
+        {
+            "id": "44444444-4444-4444-4444-444444444444",
+            "request_id": "request-1",
+            "actor_hash": "a" * 64,
+            "action": "archive",
+            "workspace_ids": ["tenant-a", "tenant-b"],
+            "workspace_count": 2,
+            "metadata": {"mode": "explicit_ids", "reason": "Cleanup"},
+            "created_at": "2026-05-20T08:00:00Z",
+        }
+    ]
+
+
+def test_list_workspace_audit_logs_route_filters_to_allowed_workspaces() -> None:
+    fake_repository = FakeWorkspaceRepository()
+    client = build_client(
+        fake_repository,
+        settings=Settings(
+            api_keys="tenant-key",
+            api_key_workspace_access="tenant-key=tenant-a|tenant-b",
+        ),
+    )
+
+    response = client.get(
+        "/workspaces/audit-logs",
+        headers={"Authorization": "Bearer tenant-key"},
+    )
+
+    assert response.status_code == 200
+    assert fake_repository.audit_list_calls == [
+        (
+            20,
+            0,
+            None,
+            None,
+            None,
+            None,
+            None,
+            frozenset({"tenant-a", "tenant-b"}),
+        )
+    ]
+
+
+def test_list_workspace_audit_logs_route_rejects_forbidden_workspace() -> None:
+    fake_repository = FakeWorkspaceRepository()
+    client = build_client(
+        fake_repository,
+        settings=Settings(
+            api_keys="tenant-key",
+            api_key_workspace_access="tenant-key=tenant-a",
+        ),
+    )
+
+    response = client.get(
+        "/workspaces/audit-logs",
+        headers={"Authorization": "Bearer tenant-key"},
+        params={"workspace_id": "tenant-b"},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "workspace access denied"}
+    assert fake_repository.audit_list_calls == []
+
+
+def test_list_workspace_audit_logs_route_rejects_invalid_time_range() -> None:
+    fake_repository = FakeWorkspaceRepository()
+    client = build_client(fake_repository)
+
+    response = client.get(
+        "/workspaces/audit-logs",
+        headers=AUTH_HEADERS,
+        params={
+            "created_from": "2026-05-20T09:00:00Z",
+            "created_to": "2026-05-20T07:00:00Z",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "created_to must be greater than or equal to created_from"
+    }
+    assert fake_repository.audit_list_calls == []
 
 
 def test_preview_bulk_workspaces_route_returns_matching_count_and_sample() -> None:
@@ -1095,6 +1273,7 @@ def test_openapi_exposes_workspace_routes() -> None:
     assert response.status_code == 200
     paths = response.json()["paths"]
     assert "/workspaces" in paths
+    assert "/workspaces/audit-logs" in paths
     assert "/workspaces/{workspace_id}" in paths
     assert "patch" in paths["/workspaces/{workspace_id}"]
     assert "/workspaces/bulk/preview" in paths
