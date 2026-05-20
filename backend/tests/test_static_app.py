@@ -39,6 +39,10 @@ def test_static_app_serves_index_html() -> None:
     assert 'id="admin-workspace-search"' in response.text
     assert 'id="admin-search-workspaces"' in response.text
     assert 'id="admin-clear-workspace-search"' in response.text
+    assert 'id="admin-workspace-selection-summary"' in response.text
+    assert 'id="admin-bulk-archive-workspaces"' in response.text
+    assert 'id="admin-bulk-restore-workspaces"' in response.text
+    assert 'id="admin-clear-workspace-selection"' in response.text
     assert 'id="admin-workspace-edit-form"' in response.text
     assert 'id="admin-edit-workspace-metadata"' in response.text
     assert 'id="admin-archive-workspace-reason"' in response.text
@@ -69,6 +73,10 @@ def test_static_app_serves_assets() -> None:
     assert "updateWorkspaceFromAdmin" in script_response.text
     assert "archiveWorkspaceFromAdmin" in script_response.text
     assert "restoreWorkspaceFromAdmin" in script_response.text
+    assert "bulkArchiveWorkspacesFromAdmin" in script_response.text
+    assert "bulkRestoreWorkspacesFromAdmin" in script_response.text
+    assert "selectedAdminWorkspaceIds" in script_response.text
+    assert "syncAdminWorkspaceSelection" in script_response.text
     assert "workspaceLifecycleText" in script_response.text
     assert "setAdminWorkspaceFilter" in script_response.text
     assert "clearAdminWorkspaceSearch" in script_response.text
@@ -93,6 +101,8 @@ def test_static_app_serves_assets() -> None:
     assert "formatUsage" in script_response.text
     assert "formatCost" in script_response.text
     assert "/workspaces?" in script_response.text
+    assert "/workspaces/bulk/archive" in script_response.text
+    assert "/workspaces/bulk/restore" in script_response.text
     assert "status: state.admin.workspaceFilter" in script_response.text
     assert 'params.set("q", state.admin.workspaceSearch)' in script_response.text
     assert "workspaceOffset" in script_response.text
@@ -109,6 +119,8 @@ def test_static_app_serves_assets() -> None:
     assert ".admin-panel" in style_response.text
     assert ".admin-workspace-filter-actions" in style_response.text
     assert ".admin-workspace-search-form" in style_response.text
+    assert ".admin-workspace-bulk-actions" in style_response.text
+    assert ".admin-workspace.selected" in style_response.text
     assert ".admin-create-form" in style_response.text
     assert ".admin-edit-form" in style_response.text
     assert ".admin-workspace-actions" in style_response.text

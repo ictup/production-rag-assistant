@@ -13,6 +13,7 @@ const state = {
     logOffset: 0,
     workspaceFilter: "all",
     workspaceSearch: "",
+    selectedWorkspaceIds: new Set(),
     filters: {
       requestId: "",
       sessionId: "",
@@ -95,6 +96,18 @@ const els = {
   adminWorkspaceSearch: document.querySelector("#admin-workspace-search"),
   adminClearWorkspaceSearch: document.querySelector(
     "#admin-clear-workspace-search",
+  ),
+  adminWorkspaceSelectionSummary: document.querySelector(
+    "#admin-workspace-selection-summary",
+  ),
+  adminBulkArchiveWorkspaces: document.querySelector(
+    "#admin-bulk-archive-workspaces",
+  ),
+  adminBulkRestoreWorkspaces: document.querySelector(
+    "#admin-bulk-restore-workspaces",
+  ),
+  adminClearWorkspaceSelection: document.querySelector(
+    "#admin-clear-workspace-selection",
   ),
   adminWorkspaceList: document.querySelector("#admin-workspace-list"),
   adminPrevLogs: document.querySelector("#admin-prev-logs"),
@@ -207,11 +220,13 @@ function bindEvents() {
       0,
       state.admin.workspaceOffset - state.admin.workspaceLimit,
     );
+    clearAdminWorkspaceSelectionState();
     void loadAdminOverview();
   });
 
   els.adminNextWorkspaces.addEventListener("click", () => {
     state.admin.workspaceOffset += state.admin.workspaceLimit;
+    clearAdminWorkspaceSelectionState();
     void loadAdminOverview();
   });
 
@@ -219,12 +234,25 @@ function bindEvents() {
     event.preventDefault();
     state.admin.workspaceSearch = els.adminWorkspaceSearch.value.trim();
     state.admin.workspaceOffset = 0;
+    clearAdminWorkspaceSelectionState();
     void loadAdminOverview();
   });
 
   els.adminClearWorkspaceSearch.addEventListener("click", () => {
     clearAdminWorkspaceSearch();
     void loadAdminOverview();
+  });
+
+  els.adminBulkArchiveWorkspaces.addEventListener("click", () => {
+    void bulkArchiveWorkspacesFromAdmin();
+  });
+
+  els.adminBulkRestoreWorkspaces.addEventListener("click", () => {
+    void bulkRestoreWorkspacesFromAdmin();
+  });
+
+  els.adminClearWorkspaceSelection.addEventListener("click", () => {
+    clearAdminWorkspaceSelection();
   });
 
   els.adminFilterForm.addEventListener("submit", (event) => {
@@ -337,6 +365,7 @@ async function loadAdminOverview() {
     ]);
 
     state.admin.workspaces = workspaceBody.workspaces || [];
+    pruneAdminWorkspaceSelection();
     state.admin.logs = logBody.logs || [];
     renderAdminOverview({
       workspaceTotal: workspaceBody.total ?? state.admin.workspaces.length,
@@ -459,6 +488,11 @@ async function archiveWorkspaceFromAdmin() {
     );
     const body = await response.json();
     replaceAdminWorkspace(body.workspace);
+    if (body.workspace.id === state.workspaceId) {
+      state.admin.workspaceFilter = "all";
+      state.admin.workspaceOffset = 0;
+      renderAdminWorkspaceFilters();
+    }
     await loadAdminOverview();
     setAdminStatus(`Archived workspace ${body.workspace.id}`);
   } catch (error) {
@@ -492,6 +526,66 @@ async function restoreWorkspaceFromAdmin() {
     setAdminError(error.message);
   } finally {
     setWorkspaceLifecycleButtonsDisabled(false);
+  }
+}
+
+async function bulkArchiveWorkspacesFromAdmin() {
+  const workspaceIds = selectedAdminWorkspaceIds();
+  if (!workspaceIds.length) {
+    setAdminError("select at least one workspace");
+    return;
+  }
+
+  setAdminWorkspaceBulkButtonsDisabled(true);
+  setAdminStatus("Archiving selected workspaces");
+  try {
+    const response = await apiFetch("/workspaces/bulk/archive", {
+      method: "POST",
+      body: JSON.stringify({
+        ids: workspaceIds,
+        reason: optionalText(els.adminArchiveWorkspaceReason.value),
+      }),
+    });
+    const body = await response.json();
+    if (workspaceIds.includes(state.workspaceId)) {
+      state.admin.workspaceFilter = "all";
+      state.admin.workspaceOffset = 0;
+      renderAdminWorkspaceFilters();
+    }
+    clearAdminWorkspaceSelectionState();
+    await loadAdminOverview();
+    setAdminStatus(`Archived ${body.updated_count} workspace(s)`);
+  } catch (error) {
+    setAdminError(error.message);
+  } finally {
+    syncAdminWorkspaceSelection();
+  }
+}
+
+async function bulkRestoreWorkspacesFromAdmin() {
+  const workspaceIds = selectedAdminWorkspaceIds();
+  if (!workspaceIds.length) {
+    setAdminError("select at least one workspace");
+    return;
+  }
+
+  setAdminWorkspaceBulkButtonsDisabled(true);
+  setAdminStatus("Restoring selected workspaces");
+  try {
+    const response = await apiFetch("/workspaces/bulk/restore", {
+      method: "POST",
+      body: JSON.stringify({
+        ids: workspaceIds,
+      }),
+    });
+    const body = await response.json();
+    clearAdminWorkspaceSelectionState();
+    await loadAdminOverview();
+    setAdminStatus(`Restored ${body.updated_count} workspace(s)`);
+  } catch (error) {
+    setAdminError(error.message);
+  } finally {
+    syncAdminWorkspaceSelection();
   }
 }
 
@@ -578,6 +672,52 @@ function clearAdminWorkspaceSearch() {
   state.admin.workspaceSearch = "";
   els.adminWorkspaceSearch.value = "";
   state.admin.workspaceOffset = 0;
+  clearAdminWorkspaceSelectionState();
+}
+
+function selectedAdminWorkspaceIds() {
+  return Array.from(state.admin.selectedWorkspaceIds);
+}
+
+function pruneAdminWorkspaceSelection() {
+  const visibleWorkspaceIds = new Set(
+    state.admin.workspaces.map((workspace) => workspace.id),
+  );
+  for (const workspaceId of selectedAdminWorkspaceIds()) {
+    if (!visibleWorkspaceIds.has(workspaceId)) {
+      state.admin.selectedWorkspaceIds.delete(workspaceId);
+    }
+  }
+}
+
+function clearAdminWorkspaceSelection() {
+  clearAdminWorkspaceSelectionState();
+  renderAdminWorkspaces();
+}
+
+function clearAdminWorkspaceSelectionState() {
+  state.admin.selectedWorkspaceIds.clear();
+}
+
+function toggleAdminWorkspaceSelection(workspaceId, selected) {
+  if (selected) {
+    state.admin.selectedWorkspaceIds.add(workspaceId);
+  } else {
+    state.admin.selectedWorkspaceIds.delete(workspaceId);
+  }
+  syncAdminWorkspaceSelection();
+}
+
+function syncAdminWorkspaceSelection() {
+  const selectedCount = state.admin.selectedWorkspaceIds.size;
+  els.adminWorkspaceSelectionSummary.textContent = `${selectedCount} selected`;
+  setAdminWorkspaceBulkButtonsDisabled(selectedCount === 0);
+}
+
+function setAdminWorkspaceBulkButtonsDisabled(disabled) {
+  els.adminBulkArchiveWorkspaces.disabled = disabled;
+  els.adminBulkRestoreWorkspaces.disabled = disabled;
+  els.adminClearWorkspaceSelection.disabled = disabled;
 }
 
 function syncWorkspaceEditForm() {
@@ -881,6 +1021,7 @@ function renderAdminWorkspacePagination({ count, total, limit, offset }) {
 function setAdminWorkspaceFilter(filter) {
   state.admin.workspaceFilter = filter;
   state.admin.workspaceOffset = 0;
+  clearAdminWorkspaceSelectionState();
   renderAdminWorkspaceFilters();
   void loadAdminOverview();
 }
@@ -935,26 +1076,39 @@ function renderAdminWorkspaces() {
     empty.className = "empty";
     empty.textContent = workspaceFilterEmptyMessage();
     els.adminWorkspaceList.append(empty);
+    syncAdminWorkspaceSelection();
     return;
   }
 
   for (const workspace of workspaces) {
     const isArchived = Boolean(workspace.archived_at);
-    const item = document.createElement("button");
-    item.type = "button";
+    const item = document.createElement("article");
     item.className = `admin-item admin-workspace${
       workspace.id === state.workspaceId ? " active" : ""
-    }${isArchived ? " archived" : ""}`;
-    item.addEventListener("click", () => {
-      selectWorkspace(workspace.id);
-    });
+    }${isArchived ? " archived" : ""}${
+      state.admin.selectedWorkspaceIds.has(workspace.id) ? " selected" : ""
+    }`;
 
     const header = document.createElement("div");
-    header.className = "admin-item-header";
+    header.className = "admin-item-header admin-workspace-header";
 
-    const title = document.createElement("span");
-    title.className = "admin-title";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "admin-workspace-checkbox";
+    checkbox.checked = state.admin.selectedWorkspaceIds.has(workspace.id);
+    checkbox.setAttribute("aria-label", `Select workspace ${workspace.id}`);
+    checkbox.addEventListener("change", () => {
+      toggleAdminWorkspaceSelection(workspace.id, checkbox.checked);
+      item.classList.toggle("selected", checkbox.checked);
+    });
+
+    const title = document.createElement("button");
+    title.type = "button";
+    title.className = "admin-title admin-workspace-title-button";
     title.textContent = workspace.name || workspace.id;
+    title.addEventListener("click", () => {
+      selectWorkspace(workspace.id);
+    });
 
     const id = document.createElement("span");
     id.className = "admin-badge";
@@ -968,10 +1122,11 @@ function renderAdminWorkspaces() {
     meta.className = "admin-meta";
     meta.textContent = workspaceLifecycleText(workspace);
 
-    header.append(title, id);
+    header.append(checkbox, title, id);
     item.append(header, description, meta);
     els.adminWorkspaceList.append(item);
   }
+  syncAdminWorkspaceSelection();
 }
 
 function workspaceLifecycleText(workspace) {

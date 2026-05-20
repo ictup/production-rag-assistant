@@ -96,7 +96,7 @@ docs/EVAL_TRENDS.md
 - 基础 rate limit 中间件：默认关闭，可按 API key 哈希或客户端 IP 限流
 - HTTP 请求指标、RAG refusal 指标、无效 citation 指标、provider token/latency/cost 指标
 - OpenAI provider 错误会映射为结构化 API 错误、日志和 metrics
-- Web UI：`GET /app/`，支持 session、history、SSE streaming chat、文档上传、reindex、workspace 创建、编辑、归档、恢复、workspace 搜索、分页和状态过滤、归档 workspace 写入控件禁用、只读 admin overview、chat log audit filters、chat log audit export 和 chat log audit details
+- Web UI：`GET /app/`，支持 session、history、SSE streaming chat、文档上传、reindex、workspace 创建、编辑、归档、恢复、workspace 搜索、分页、状态过滤和批量归档/恢复、归档 workspace 写入控件禁用、只读 admin overview、chat log audit filters、chat log audit export 和 chat log audit details
 
 ### 数据库与迁移
 
@@ -1256,10 +1256,11 @@ Completed: 2026-05-20T09:51:56Z
 - workspace 列表分页基础版已完成：Admin overview 使用 `/workspaces?limit&offset` 做 Previous/Next 翻页。
 - workspace 搜索基础版已完成：`GET /workspaces?q=...` 会按 workspace ID、name 和 description 过滤，Admin overview 可搜索并重置分页。
 - workspace 批量操作 API 基础版已完成：`POST /workspaces/bulk/archive` 和 `POST /workspaces/bulk/restore` 支持一次请求处理多个 workspace，缺失 workspace 会返回 missing id 列表。
+- workspace 批量操作 UI 基础版已完成：Admin overview 支持当前页多选 workspace，并调用 bulk archive / restore API。
 - chat log 审计过滤基础版已完成：`GET /chat/logs` 支持 `offset`、`session_id`、`request_id`、`refusal_only`、`citation_valid`，Admin overview 支持对应筛选和 Previous/Next 翻页。
 - chat log 审计导出基础版已完成：`GET /chat/logs/export` 支持同一组过滤参数，可导出 JSONL 或 CSV，Admin overview 可按当前过滤条件触发下载。
 - chat log 审计详情基础版已完成：每条最近日志可展开查看 session、request、citation、sources、refusal、retrieval、query rewrite、metadata filter、usage 和 cost。
-- 完整管理后台仍未完成：还缺少用户/角色/组织管理、workspace 批量操作 UI、导出任务异步化/大文件存储、批量运维操作和权限分层 UI。
+- 完整管理后台仍未完成：还缺少用户/角色/组织管理、跨页批量选择、导出任务异步化/大文件存储、批量运维操作和权限分层 UI。
 
 ### 生产部署
 
@@ -1374,20 +1375,21 @@ OPENAI_API_KEY
 20. workspace 搜索基础版。已完成。
 21. workspace 后端状态过滤。已完成。
 22. workspace 批量操作 API 基础版。已完成。
+23. workspace 批量操作 UI 基础版。已完成。
 
 ## 14. 当前优先级建议
 
 建议下一步优先做：
 
 ```text
-workspace 批量操作 UI 基础版
+workspace 跨页批量选择策略
 ```
 
 原因：
 
-- workspace 归档/恢复 API、后端写保护、前端写入禁用、状态过滤、分页、搜索、后端状态过滤和批量操作 API 已完成。
-- 当前 Admin overview 仍没有多选控件，批量 API 只能通过 HTTP 客户端调用。
-- 下一步可以在 Admin overview 中增加 workspace 多选和批量 archive / restore 按钮。
+- workspace 归档/恢复 API、后端写保护、前端写入禁用、状态过滤、分页、搜索、后端状态过滤、批量操作 API 和当前页批量操作 UI 已完成。
+- 当前批量 UI 只保留当前页选择，翻页、搜索或过滤后会清空/裁剪选中集合，避免误操作。
+- 下一步可以设计跨页批量选择策略，例如显式的 "select all matching query" 语义和后端任务化执行。
 
 以下命令是后续需要真实 provider 时的验证入口：
 

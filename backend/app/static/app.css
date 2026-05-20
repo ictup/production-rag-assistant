@@ -548,6 +548,35 @@ textarea:focus {
   font-weight: 750;
 }
 
+.admin-workspace-bulk-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  padding: 10px;
+}
+
+.admin-workspace-bulk-actions span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+#admin-bulk-archive-workspaces {
+  border-color: rgba(180, 35, 24, 0.45);
+  background: #fff5f3;
+  color: var(--danger);
+  font-weight: 750;
+}
+
+#admin-bulk-restore-workspaces {
+  color: var(--accent-dark);
+  font-weight: 750;
+}
+
 .admin-create-form button {
   border-color: var(--accent);
   background: var(--accent);
@@ -696,6 +725,11 @@ textarea:focus {
   background: #edf7f5;
 }
 
+.admin-workspace.selected {
+  border-color: var(--border-strong);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
 .admin-workspace.archived {
   border-style: dashed;
 }
@@ -709,6 +743,28 @@ textarea:focus {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: start;
+}
+
+.admin-workspace-header {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.admin-workspace-checkbox {
+  width: 16px;
+  min-height: 16px;
+}
+
+.admin-workspace-title-button {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+}
+
+.admin-workspace-title-button:hover {
+  color: var(--accent-dark);
 }
 
 .admin-title {
@@ -861,6 +917,14 @@ textarea:focus {
   }
 
   .admin-workspace-search-form label {
+    grid-column: 1 / -1;
+  }
+
+  .admin-workspace-bulk-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-workspace-bulk-actions span {
     grid-column: 1 / -1;
   }
 }
