@@ -495,16 +495,35 @@ class ChatLogRepository:
         *,
         workspace_id: str = "public",
         limit: int = 10,
+        offset: int = 0,
+        session_id: uuid.UUID | None = None,
+        request_id: str | None = None,
+        refusal_only: bool = False,
+        citation_valid: bool | None = None,
     ) -> list[ChatLog]:
         workspace_id = workspace_id.strip() or "public"
+        request_id = normalize_optional_text(request_id)
         if limit <= 0:
             raise ValueError("limit must be greater than zero")
+        if offset < 0:
+            raise ValueError("offset must not be negative")
+
+        filters = [ChatLog.workspace_id == workspace_id]
+        if session_id is not None:
+            filters.append(ChatLog.session_id == session_id)
+        if request_id is not None:
+            filters.append(ChatLog.request_id == request_id)
+        if refusal_only:
+            filters.append(ChatLog.refusal.is_not(None))
+        if citation_valid is not None:
+            filters.append(ChatLog.citation_valid.is_(citation_valid))
 
         statement = (
             select(ChatLog)
-            .where(ChatLog.workspace_id == workspace_id)
+            .where(*filters)
             .order_by(ChatLog.created_at.desc())
             .limit(limit)
+            .offset(offset)
         )
         return list((await self.session.scalars(statement)).all())
 

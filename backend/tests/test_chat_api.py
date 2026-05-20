@@ -105,7 +105,7 @@ class FakeChatLogRepository:
         self.commit_flags: list[bool] = []
         self.recent_logs = recent_logs or []
         self.session_logs = session_logs or []
-        self.list_calls: list[tuple[str, int]] = []
+        self.list_calls: list[dict[str, object]] = []
         self.session_log_calls: list[tuple[uuid.UUID, str, int]] = []
 
     async def create_chat_log(
@@ -122,8 +122,23 @@ class FakeChatLogRepository:
         *,
         workspace_id: str = "public",
         limit: int = 10,
+        offset: int = 0,
+        session_id: uuid.UUID | None = None,
+        request_id: str | None = None,
+        refusal_only: bool = False,
+        citation_valid: bool | None = None,
     ) -> list[ChatLog]:
-        self.list_calls.append((workspace_id, limit))
+        self.list_calls.append(
+            {
+                "workspace_id": workspace_id,
+                "limit": limit,
+                "offset": offset,
+                "session_id": session_id,
+                "request_id": request_id,
+                "refusal_only": refusal_only,
+                "citation_valid": citation_valid,
+            }
+        )
         return self.recent_logs
 
     async def list_recent_chat_logs_by_session(
@@ -890,10 +905,22 @@ def test_chat_logs_route_returns_recent_logs_for_workspace() -> None:
     )
 
     assert response.status_code == 200
-    assert fake_chat_log_repository.list_calls == [("tenant-a", 3)]
+    assert fake_chat_log_repository.list_calls == [
+        {
+            "workspace_id": "tenant-a",
+            "limit": 3,
+            "offset": 0,
+            "session_id": None,
+            "request_id": None,
+            "refusal_only": False,
+            "citation_valid": None,
+        }
+    ]
     body = response.json()
     assert body["workspace_id"] == "tenant-a"
     assert body["count"] == 1
+    assert body["limit"] == 3
+    assert body["offset"] == 0
     assert body["logs"][0]["id"] == "11111111-1111-1111-1111-111111111111"
     assert body["logs"][0]["request_id"] == "request-1"
     assert body["logs"][0]["session_id"] is None
@@ -910,10 +937,22 @@ def test_chat_logs_route_defaults_workspace_to_public() -> None:
     response = client.get("/chat/logs", headers=AUTH_HEADERS)
 
     assert response.status_code == 200
-    assert fake_chat_log_repository.list_calls == [("public", 10)]
+    assert fake_chat_log_repository.list_calls == [
+        {
+            "workspace_id": "public",
+            "limit": 10,
+            "offset": 0,
+            "session_id": None,
+            "request_id": None,
+            "refusal_only": False,
+            "citation_valid": None,
+        }
+    ]
     assert response.json() == {
         "workspace_id": "public",
         "count": 0,
+        "limit": 10,
+        "offset": 0,
         "logs": [],
     }
 
@@ -943,3 +982,40 @@ def test_chat_logs_route_rejects_invalid_limit() -> None:
 
     assert response.status_code == 422
     assert fake_chat_log_repository.list_calls == []
+
+
+def test_chat_logs_route_forwards_audit_filters() -> None:
+    fake_pipeline = FakePipeline()
+    fake_chat_log_repository = FakeChatLogRepository()
+    client = build_client(fake_pipeline, fake_chat_log_repository)
+    session_id = uuid.UUID("33333333-3333-3333-3333-333333333333")
+
+    response = client.get(
+        "/chat/logs",
+        headers={
+            **AUTH_HEADERS,
+            "X-Workspace-ID": "tenant-a",
+        },
+        params={
+            "limit": 5,
+            "offset": 10,
+            "session_id": str(session_id),
+            "request_id": "request-1",
+            "refusal_only": "true",
+            "citation_valid": "false",
+        },
+    )
+
+    assert response.status_code == 200
+    assert fake_chat_log_repository.list_calls == [
+        {
+            "workspace_id": "tenant-a",
+            "limit": 5,
+            "offset": 10,
+            "session_id": session_id,
+            "request_id": "request-1",
+            "refusal_only": True,
+            "citation_valid": False,
+        }
+    ]
+    assert response.json()["offset"] == 10

@@ -132,6 +132,8 @@ class ChatLogItem(BaseModel):
 class ChatLogsResponse(BaseModel):
     workspace_id: str
     count: int
+    limit: int = Field(gt=0)
+    offset: int = Field(ge=0)
     logs: list[ChatLogItem]
 
     @classmethod
@@ -139,10 +141,14 @@ class ChatLogsResponse(BaseModel):
         cls,
         *,
         workspace_id: str,
+        limit: int,
+        offset: int,
         logs: list[ChatLog],
     ) -> "ChatLogsResponse":
         return cls(
             workspace_id=workspace_id,
             count=len(logs),
+            limit=limit,
+            offset=offset,
             logs=[ChatLogItem.from_model(log) for log in logs],
         )

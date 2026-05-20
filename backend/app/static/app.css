@@ -29,6 +29,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -131,6 +132,7 @@ label {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid var(--border);
@@ -145,6 +147,11 @@ input {
   padding: 8px 10px;
 }
 
+select {
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
 textarea {
   min-height: 72px;
   resize: vertical;
@@ -153,6 +160,7 @@ textarea {
 }
 
 input:focus,
+select:focus,
 textarea:focus {
   border-color: var(--accent);
   background: var(--panel);
@@ -478,6 +486,57 @@ textarea:focus {
   color: var(--text);
   font-size: 22px;
   line-height: 1;
+}
+
+.admin-filter-form {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  padding: 10px;
+}
+
+.admin-filter-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-toggle input {
+  width: 16px;
+  min-height: 16px;
+}
+
+.admin-filter-actions,
+.admin-pagination {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.admin-pagination {
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+}
+
+.admin-filter-actions button:first-child {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 750;
+}
+
+.admin-pagination span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  white-space: nowrap;
 }
 
 .admin-section {

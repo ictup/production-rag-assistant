@@ -7,6 +7,14 @@ const state = {
   admin: {
     workspaces: [],
     logs: [],
+    logLimit: 5,
+    logOffset: 0,
+    filters: {
+      requestId: "",
+      sessionId: "",
+      citationValid: "",
+      refusalOnly: false,
+    },
   },
   sending: false,
 };
@@ -39,7 +47,16 @@ const els = {
   adminStatus: document.querySelector("#admin-status"),
   adminWorkspaceCount: document.querySelector("#admin-workspace-count"),
   adminLogCount: document.querySelector("#admin-log-count"),
+  adminFilterForm: document.querySelector("#admin-filter-form"),
+  adminRequestId: document.querySelector("#admin-request-id"),
+  adminSessionId: document.querySelector("#admin-session-id"),
+  adminCitationValid: document.querySelector("#admin-citation-valid"),
+  adminRefusalOnly: document.querySelector("#admin-refusal-only"),
+  clearAdminFilters: document.querySelector("#clear-admin-filters"),
   adminWorkspaceList: document.querySelector("#admin-workspace-list"),
+  adminPrevLogs: document.querySelector("#admin-prev-logs"),
+  adminNextLogs: document.querySelector("#admin-next-logs"),
+  adminPageInfo: document.querySelector("#admin-page-info"),
   adminLogList: document.querySelector("#admin-log-list"),
 };
 
@@ -65,6 +82,8 @@ function bindEvents() {
   });
 
   els.workspaceId.addEventListener("change", () => {
+    state.admin.logOffset = 0;
+    clearSelectedSession();
     void loadSessions();
     void loadDocuments();
     void loadAdminOverview();
@@ -105,6 +124,28 @@ function bindEvents() {
   });
 
   els.reloadAdmin.addEventListener("click", () => {
+    void loadAdminOverview();
+  });
+
+  els.adminFilterForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    readAdminFilters();
+    state.admin.logOffset = 0;
+    void loadAdminOverview();
+  });
+
+  els.clearAdminFilters.addEventListener("click", () => {
+    clearAdminFilters();
+    void loadAdminOverview();
+  });
+
+  els.adminPrevLogs.addEventListener("click", () => {
+    state.admin.logOffset = Math.max(0, state.admin.logOffset - state.admin.logLimit);
+    void loadAdminOverview();
+  });
+
+  els.adminNextLogs.addEventListener("click", () => {
+    state.admin.logOffset += state.admin.logLimit;
     void loadAdminOverview();
   });
 }
@@ -180,7 +221,7 @@ async function loadAdminOverview() {
   try {
     const [workspaceResponse, logResponse] = await Promise.all([
       apiFetch("/workspaces?limit=20&offset=0"),
-      apiFetch("/chat/logs?limit=5"),
+      apiFetch(buildChatLogsUrl()),
     ]);
     const [workspaceBody, logBody] = await Promise.all([
       workspaceResponse.json(),
@@ -192,11 +233,56 @@ async function loadAdminOverview() {
     renderAdminOverview({
       workspaceTotal: workspaceBody.total ?? state.admin.workspaces.length,
       logTotal: logBody.count ?? state.admin.logs.length,
+      logLimit: logBody.limit ?? state.admin.logLimit,
+      logOffset: logBody.offset ?? state.admin.logOffset,
     });
     setAdminStatus(`Updated ${formatTimestamp(new Date().toISOString())}`);
   } catch (error) {
     setAdminError(error.message);
   }
+}
+
+function buildChatLogsUrl() {
+  const params = new URLSearchParams({
+    limit: String(state.admin.logLimit),
+    offset: String(state.admin.logOffset),
+  });
+  if (state.admin.filters.requestId) {
+    params.set("request_id", state.admin.filters.requestId);
+  }
+  if (state.admin.filters.sessionId) {
+    params.set("session_id", state.admin.filters.sessionId);
+  }
+  if (state.admin.filters.citationValid) {
+    params.set("citation_valid", state.admin.filters.citationValid);
+  }
+  if (state.admin.filters.refusalOnly) {
+    params.set("refusal_only", "true");
+  }
+  return `/chat/logs?${params.toString()}`;
+}
+
+function readAdminFilters() {
+  state.admin.filters = {
+    requestId: els.adminRequestId.value.trim(),
+    sessionId: els.adminSessionId.value.trim(),
+    citationValid: els.adminCitationValid.value,
+    refusalOnly: els.adminRefusalOnly.checked,
+  };
+}
+
+function clearAdminFilters() {
+  state.admin.filters = {
+    requestId: "",
+    sessionId: "",
+    citationValid: "",
+    refusalOnly: false,
+  };
+  state.admin.logOffset = 0;
+  els.adminRequestId.value = "";
+  els.adminSessionId.value = "";
+  els.adminCitationValid.value = "";
+  els.adminRefusalOnly.checked = false;
 }
 
 async function loadMarkdownFile() {
@@ -317,11 +403,24 @@ function renderDocuments() {
   }
 }
 
-function renderAdminOverview({ workspaceTotal, logTotal }) {
+function renderAdminOverview({ workspaceTotal, logTotal, logLimit, logOffset }) {
   els.adminWorkspaceCount.textContent = String(workspaceTotal);
   els.adminLogCount.textContent = String(logTotal);
   renderAdminWorkspaces();
   renderAdminLogs();
+  renderAdminPagination({
+    count: logTotal,
+    limit: logLimit,
+    offset: logOffset,
+  });
+}
+
+function renderAdminPagination({ count, limit, offset }) {
+  const start = count > 0 ? offset + 1 : 0;
+  const end = count > 0 ? offset + count : 0;
+  els.adminPageInfo.textContent = count > 0 ? `Logs ${start}-${end}` : "No logs";
+  els.adminPrevLogs.disabled = offset <= 0;
+  els.adminNextLogs.disabled = count < limit;
 }
 
 function renderAdminWorkspaces() {
@@ -466,6 +565,7 @@ function selectWorkspace(workspaceId) {
   state.workspaceId = nextWorkspaceId;
   els.workspaceId.value = state.workspaceId;
   localStorage.setItem("rag.workspaceId", state.workspaceId);
+  state.admin.logOffset = 0;
   if (changed) {
     clearSelectedSession();
   }

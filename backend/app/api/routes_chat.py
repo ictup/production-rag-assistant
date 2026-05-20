@@ -501,13 +501,25 @@ async def list_chat_logs(
     ],
     workspace_id: Annotated[str | None, Header(alias="X-Workspace-ID")] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 10,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    session_id: Annotated[uuid.UUID | None, Query()] = None,
+    request_id: Annotated[str | None, Query(min_length=1, max_length=256)] = None,
+    refusal_only: bool = False,
+    citation_valid: Annotated[bool | None, Query()] = None,
 ) -> ChatLogsResponse:
     normalized_workspace_id = resolve_workspace_id(principal, workspace_id)
     logs = await chat_log_repository.list_recent_chat_logs(
         workspace_id=normalized_workspace_id,
         limit=limit,
+        offset=offset,
+        session_id=session_id,
+        request_id=request_id,
+        refusal_only=refusal_only,
+        citation_valid=citation_valid,
     )
     return ChatLogsResponse.from_logs(
         workspace_id=normalized_workspace_id,
+        limit=limit,
+        offset=offset,
         logs=logs,
     )

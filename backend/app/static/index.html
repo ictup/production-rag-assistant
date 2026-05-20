@@ -166,6 +166,51 @@
             </div>
           </div>
 
+          <form id="admin-filter-form" class="admin-filter-form">
+            <div class="admin-filter-grid">
+              <label>
+                Request ID
+                <input
+                  id="admin-request-id"
+                  name="admin-request-id"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="request-..."
+                />
+              </label>
+              <label>
+                Session ID
+                <input
+                  id="admin-session-id"
+                  name="admin-session-id"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="Optional UUID"
+                />
+              </label>
+              <label>
+                Citation
+                <select id="admin-citation-valid" name="admin-citation-valid">
+                  <option value="">Any</option>
+                  <option value="true">Valid</option>
+                  <option value="false">Invalid</option>
+                </select>
+              </label>
+              <label class="admin-toggle">
+                <input
+                  id="admin-refusal-only"
+                  name="admin-refusal-only"
+                  type="checkbox"
+                />
+                Refusals only
+              </label>
+            </div>
+            <div class="admin-filter-actions">
+              <button type="submit">Apply</button>
+              <button id="clear-admin-filters" type="button">Clear</button>
+            </div>
+          </form>
+
           <section class="admin-section" aria-label="Workspaces">
             <h3>Workspaces</h3>
             <div
@@ -177,6 +222,11 @@
 
           <section class="admin-section" aria-label="Recent chat logs">
             <h3>Recent chat logs</h3>
+            <div class="admin-pagination">
+              <button id="admin-prev-logs" type="button">Previous</button>
+              <span id="admin-page-info">No logs</span>
+              <button id="admin-next-logs" type="button">Next</button>
+            </div>
             <div id="admin-log-list" class="admin-list" aria-live="polite"></div>
           </section>
         </section>

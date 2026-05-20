@@ -664,6 +664,7 @@ async def test_list_recent_chat_logs_filters_workspace_and_limits_results() -> N
     result = await repository.list_recent_chat_logs(
         workspace_id=" public ",
         limit=3,
+        offset=2,
     )
 
     assert result == [chat_log]
@@ -671,6 +672,46 @@ async def test_list_recent_chat_logs_filters_workspace_and_limits_results() -> N
     compiled = str(session.scalars_statement)
     assert "chat_logs.workspace_id" in compiled
     assert "ORDER BY chat_logs.created_at DESC" in compiled
+    assert "LIMIT" in compiled
+    assert "OFFSET" in compiled
+
+
+@pytest.mark.asyncio
+async def test_list_recent_chat_logs_applies_audit_filters() -> None:
+    session_id = uuid.UUID("33333333-3333-3333-3333-333333333333")
+    chat_log = ChatLog(
+        request_id="request-1",
+        workspace_id="tenant-a",
+        session_id=session_id,
+        question="What is FlashAttention?",
+        answer="FlashAttention is IO-aware. [1]",
+        sources=[],
+        retrieval={},
+        usage={},
+        refusal={"reason": "low_retrieval_confidence"},
+        citation_valid=False,
+        latency_ms=12,
+    )
+    session = FakeAsyncSession(scalars_result=[chat_log])
+    repository = ChatLogRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.list_recent_chat_logs(
+        workspace_id="tenant-a",
+        limit=3,
+        offset=1,
+        session_id=session_id,
+        request_id=" request-1 ",
+        refusal_only=True,
+        citation_valid=False,
+    )
+
+    assert result == [chat_log]
+    assert session.scalars_statement is not None
+    compiled = str(session.scalars_statement)
+    assert "chat_logs.session_id" in compiled
+    assert "chat_logs.request_id" in compiled
+    assert "chat_logs.refusal IS NOT NULL" in compiled
+    assert "chat_logs.citation_valid IS false" in compiled
 
 
 @pytest.mark.asyncio
@@ -680,6 +721,9 @@ async def test_list_recent_chat_logs_rejects_invalid_limit() -> None:
 
     with pytest.raises(ValueError, match="limit"):
         await repository.list_recent_chat_logs(limit=0)
+
+    with pytest.raises(ValueError, match="offset"):
+        await repository.list_recent_chat_logs(offset=-1)
 
 
 @pytest.mark.asyncio

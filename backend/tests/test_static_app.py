@@ -24,6 +24,9 @@ def test_static_app_serves_index_html() -> None:
     assert 'id="document-form"' in response.text
     assert 'id="reindex-dry-run"' in response.text
     assert 'id="reload-admin"' in response.text
+    assert 'id="admin-filter-form"' in response.text
+    assert 'id="admin-request-id"' in response.text
+    assert 'id="admin-prev-logs"' in response.text
     assert 'id="admin-workspace-list"' in response.text
     assert 'id="admin-log-list"' in response.text
 
@@ -39,12 +42,15 @@ def test_static_app_serves_assets() -> None:
     assert "uploadDocument" in script_response.text
     assert "reindexDocuments" in script_response.text
     assert "loadAdminOverview" in script_response.text
+    assert "buildChatLogsUrl" in script_response.text
+    assert "readAdminFilters" in script_response.text
+    assert "refusal_only" in script_response.text
     assert "buildChatLogAuditDetails" in script_response.text
     assert "formatRefusal" in script_response.text
     assert "formatUsage" in script_response.text
     assert "formatCost" in script_response.text
     assert "/workspaces?limit=20&offset=0" in script_response.text
-    assert "/chat/logs?limit=5" in script_response.text
+    assert "/chat/logs?" in script_response.text
     assert "renderMessageError" in script_response.text
     assert "providerErrorUserMessage" in script_response.text
     assert "Retry" in script_response.text
@@ -52,6 +58,8 @@ def test_static_app_serves_assets() -> None:
     assert ".chat-panel" in style_response.text
     assert ".knowledge-panel" in style_response.text
     assert ".admin-panel" in style_response.text
+    assert ".admin-filter-form" in style_response.text
+    assert ".admin-pagination" in style_response.text
     assert ".admin-stat" in style_response.text
     assert ".admin-item" in style_response.text
     assert ".admin-detail" in style_response.text
