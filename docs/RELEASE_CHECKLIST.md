@@ -26,6 +26,7 @@ Run from the repository root:
 uv run ruff check .
 uv run pytest
 uv run python -m backend.app.core.config_check
+uv run python -m evals.agent_run --format summary --fail-on-failure --no-output
 docker compose -f docker-compose.prod.yml config --quiet
 ```
 
@@ -90,7 +91,9 @@ The CI workflow must include:
 - pipeline smoke
 - document-management smoke
 - eval gate
+- agent eval gate
 - eval report artifact upload
+- agent eval report artifact upload
 
 Do not tag a release from a commit whose CI status is missing, pending, failed,
 or for a different SHA.

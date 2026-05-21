@@ -77,6 +77,8 @@ validated release gates.
 - Provider timeout, retry, error mapping, structured logs, Prometheus metrics,
   latency metrics, token metrics, and cost estimates.
 - Deterministic eval gate with JSONL datasets and trend recording.
+- Deterministic Agent support triage eval gate with 30 support cases and JSON
+  reports.
 - Minimal web UI at `/app/` with sessions, history, SSE chat, document upload,
   reindex actions, workspace creation, editing, archive/restore actions, admin
   overview, workspace search, pagination, status filters, bulk archive/restore
@@ -205,7 +207,13 @@ Run the eval gate:
 uv run python -m evals.run --format summary --fail-on-failure --no-output
 ```
 
-Current local baseline: `673 passed`.
+Run the Agent support triage eval gate:
+
+```powershell
+uv run python -m evals.agent_run --format summary --fail-on-failure --no-output
+```
+
+Current local baseline: `685 passed`.
 
 ## Configuration Model
 
@@ -441,6 +449,7 @@ uv run ruff check .
 uv run pytest
 uv run python -m backend.app.core.config_check
 uv run python -m evals.run --format summary --fail-on-failure --no-output
+uv run python -m evals.agent_run --format summary --fail-on-failure --no-output
 uv run python -m backend.app.rag.pipeline_smoke
 uv run python -m evals.document_management_smoke
 docker compose -f docker-compose.prod.yml config --quiet

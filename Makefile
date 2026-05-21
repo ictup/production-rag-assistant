@@ -1,4 +1,4 @@
-.PHONY: db-up db-down db-logs config-check prod-config-check prod-config prod-build prod-up prod-down prod-logs prod-worker-logs migrate ingest ingest-dry-run reindex-embeddings-dry-run reindex-embeddings inspect-ingestion inspect-chat-logs inspect-evals run-evals eval-gate eval-gate-openai eval-trend document-management-smoke embedding-smoke generator-smoke vector-smoke sparse-smoke hybrid-smoke rerank-smoke pipeline-smoke pipeline-smoke-openai
+.PHONY: db-up db-down db-logs config-check prod-config-check prod-config prod-build prod-up prod-down prod-logs prod-worker-logs migrate ingest ingest-dry-run reindex-embeddings-dry-run reindex-embeddings inspect-ingestion inspect-chat-logs inspect-evals run-evals eval-gate eval-gate-openai eval-trend agent-evals agent-eval-gate document-management-smoke embedding-smoke generator-smoke vector-smoke sparse-smoke hybrid-smoke rerank-smoke pipeline-smoke pipeline-smoke-openai
 
 db-up:
 	docker compose up -d postgres
@@ -68,6 +68,12 @@ eval-gate-openai:
 
 eval-trend:
 	uv run python -m evals.run --format summary --trend-output evals/reports/trends.jsonl
+
+agent-evals:
+	uv run python -m evals.agent_run --format summary
+
+agent-eval-gate:
+	uv run python -m evals.agent_run --format summary --fail-on-failure
 
 document-management-smoke:
 	uv run python -m evals.document_management_smoke

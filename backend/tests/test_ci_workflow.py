@@ -35,6 +35,7 @@ def test_ci_workflow_runs_required_checks() -> None:
     assert "python -m backend.app.rag.pipeline_smoke" in commands
     assert "python -m evals.document_management_smoke" in commands
     assert "python -m evals.run" in commands
+    assert "python -m evals.agent_run" in commands
     assert "--fail-on-failure" in commands
 
 
@@ -48,6 +49,21 @@ def test_ci_workflow_uploads_eval_report() -> None:
     assert upload_step["if"] == "always()"
     assert upload_step["uses"] == "actions/upload-artifact@v4"
     assert upload_step["with"]["path"] == "evals/reports/ci.json"
+
+
+def test_ci_workflow_uploads_agent_eval_report() -> None:
+    workflow = load_ci_workflow()
+    steps = workflow["jobs"]["backend"]["steps"]
+    upload_step = next(
+        step for step in steps if step.get("name") == "Upload agent eval report"
+    )
+
+    assert upload_step["if"] == "always()"
+    assert upload_step["uses"] == "actions/upload-artifact@v4"
+    assert (
+        upload_step["with"]["path"]
+        == "evals/reports/agent_support_triage_ci.json"
+    )
 
 
 def test_handoff_records_remote_ci_status() -> None:

@@ -37,6 +37,8 @@ def test_release_checklist_documents_required_commands() -> None:
         "uv run pytest",
         "uv run python -m backend.app.core.config_check",
         "uv run python -m backend.app.core.config_check --production",
+        "uv run python -m evals.agent_run --format summary "
+        "--fail-on-failure --no-output",
         "docker compose -f docker-compose.prod.yml config --quiet",
         "uv run python -m backend.app.rag.pipeline_smoke",
         "uv run python -m evals.document_management_smoke",

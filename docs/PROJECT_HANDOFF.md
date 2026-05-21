@@ -141,6 +141,8 @@ docs/agentic_rag_extension.md
   `approval_id`
 - Agentic RAG Prometheus 指标：`POST /agent/support-triage` 会记录 triage
   结果、审批创建数、节点执行次数和节点延迟
+- Agentic RAG eval gate：30 条 support triage case 覆盖分类、风险、审批、
+  节点序列、工具序列、引用有效性和输出关键词
 - API key 鉴权：`Authorization: Bearer dev-key`
 - workspace 隔离头：`X-Workspace-ID`
 - API key workspace 访问控制：`API_KEY_WORKSPACE_ACCESS`
@@ -237,10 +239,15 @@ docs/agentic_rag_extension.md
 - deterministic eval runner
 - eval summary 和 JSON report
 - eval JSONL trend record
+- Agent support triage eval 数据集：`evals/datasets/agent_support_triage.jsonl`
+- Agent support triage eval runner：`python -m evals.agent_run`
 - `eval-gate` 失败门禁
+- `agent-eval-gate` 失败门禁
 - 默认本地报告：`evals/reports/latest.json`
+- 默认 Agent eval 报告：`evals/reports/agent_support_triage.json`
 - 默认本地趋势文件：`evals/reports/trends.jsonl`
 - CI 报告：`evals/reports/ci.json`
+- CI Agent eval 报告：`evals/reports/agent_support_triage_ci.json`
 
 ### CI
 
@@ -268,7 +275,9 @@ docs/agentic_rag_extension.md
   - pipeline smoke
   - document-management smoke
   - eval gate
+  - agent eval gate
   - eval report artifact 上传
+  - agent eval report artifact 上传
 
 ## 3. 当前目录结构
 
@@ -294,6 +303,10 @@ ingestion/
 evals/
   datasets/           JSONL eval 数据集
   reports/            本地/CI eval 运行报告目录
+  agent_loaders.py    Agent eval dataset loader
+  agent_models.py     Agent eval 数据模型
+  agent_runner.py     deterministic Agent support triage eval runner
+  agent_run.py        Agent eval CLI
   loaders.py          eval dataset loader
   models.py           eval 数据模型
   runner.py           deterministic eval runner
@@ -1013,7 +1026,7 @@ uv run pytest
 当前最近一次本地通过结果：
 
 ```text
-673 passed
+685 passed
 ```
 
 ### Pipeline Smoke
@@ -1081,6 +1094,21 @@ eval cases: 9/9 passed (100.0%)
 - rag_eval_questions: 5/5 passed (100.0%)
 - refusal_questions: 2/2 passed (100.0%)
 - security_questions: 2/2 passed (100.0%)
+```
+
+### Agent Eval Gate
+
+```powershell
+uv run python -m evals.agent_run --format summary --fail-on-failure
+```
+
+当前 Agent eval 基线：
+
+```text
+agent eval cases: 30/30 passed (100.0%)
+- agent_support_triage: 30/30 passed (100.0%)
+- statuses: approval_required=10, finalized=20
+- risks: high=10, low=8, medium=12
 ```
 
 最近一次真实 OpenAI 端到端验证也已通过：
@@ -1219,6 +1247,8 @@ make run-evals          运行 eval summary
 make eval-gate          eval 失败时返回非零退出码
 make eval-gate-openai   用 OpenAI embedding/generator 运行真实 eval gate
 make eval-trend         运行 eval summary 并追加 JSONL 趋势记录
+make agent-evals        运行 Agent support triage eval summary
+make agent-eval-gate    Agent eval 失败时返回非零退出码
 make document-management-smoke
                         验证文档管理 API 上传、查询、reindex dry-run 和删除
 make embedding-smoke    验证当前 embedding provider 能返回正确维度
@@ -1303,6 +1333,7 @@ uv run ruff check .
 uv run pytest
 uv run python -m backend.app.rag.pipeline_smoke
 uv run python -m evals.run --format summary --fail-on-failure
+uv run python -m evals.agent_run --format summary --fail-on-failure
 ```
 
 9. 启动 API。

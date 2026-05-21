@@ -80,7 +80,7 @@ migration advice, and latency troubleshooting.
 
 ## Planned Next Steps
 
-1. Add 30 support eval cases and an agent eval report.
+1. Create the next release tag and release notes.
 
 ## Step 2 Scope
 
@@ -221,3 +221,20 @@ node execution counts, and node latency histograms after the workflow returns.
 Labels intentionally stay low cardinality: status, category, risk level,
 approval-required boolean, node name, and node success. Run IDs, ticket IDs,
 workspace IDs, request IDs, and actor hashes are not emitted as metric labels.
+
+## Step 11 Scope
+
+The eleventh implementation step adds deterministic Agent support triage evals:
+
+```text
+evals/datasets/agent_support_triage.jsonl
+python -m evals.agent_run
+```
+
+The dataset contains 30 support cases across `rag_failure`, `evaluation`,
+`serving_latency`, `rate_limit`, `deployment`, `unknown`, `data_privacy`, and
+`security`. The runner executes the real support triage workflow with fake RAG,
+fake historical ticket lookup, and fake approval persistence, then scores the
+response status, category, risk level, approval requirement, node sequence, tool
+sequence, citation validity, answer keywords, and approval reason keywords. CI
+now runs this Agent eval gate and uploads the JSON report artifact.

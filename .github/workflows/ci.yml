@@ -88,10 +88,25 @@ jobs:
           --fail-on-failure
           --output evals/reports/ci.json
 
+      - name: Agent eval gate
+        run: >-
+          uv run python -m evals.agent_run
+          --format summary
+          --fail-on-failure
+          --output evals/reports/agent_support_triage_ci.json
+
       - name: Upload eval report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: eval-report
           path: evals/reports/ci.json
+          if-no-files-found: ignore
+
+      - name: Upload agent eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-eval-report
+          path: evals/reports/agent_support_triage_ci.json
           if-no-files-found: ignore

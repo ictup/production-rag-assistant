@@ -342,5 +342,6 @@ uv run pytest
 uv run ruff check .
 uv run python -m backend.app.core.config_check --production
 uv run python -m evals.run --format summary --fail-on-failure --no-output
+uv run python -m evals.agent_run --format summary --fail-on-failure --no-output
 docker compose -f docker-compose.prod.yml config --quiet
 ```
